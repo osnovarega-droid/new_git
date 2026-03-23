@@ -903,7 +903,7 @@ class App(customtkinter.CTk):
         main.grid(row=2, column=0, padx=10, pady=(0, 8), sticky="nsew")
         main.grid_columnconfigure(0, weight=2)
         main.grid_columnconfigure(1, weight=1)
-        main.grid_columnconfigure(2, weight=1)
+        main.grid_columnconfigure(2, weight=0, minsize=220)
         main.grid_rowconfigure(0, weight=1)
         main.grid_rowconfigure(1, weight=0)
 
@@ -939,13 +939,14 @@ class App(customtkinter.CTk):
         self.srt_scroll.grid_columnconfigure(0, weight=1)
         self._build_srt_rows()
 
-        tools = customtkinter.CTkFrame(main, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
-        tools.grid(row=0, column=2, padx=(6, 0), pady=0, sticky="nsew")
+        tools = customtkinter.CTkFrame(main, width=220, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
+        tools.grid(row=0, column=2, padx=(6, 0), pady=0, sticky="ns")
+        tools.grid_propagate(False)
         tools.grid_columnconfigure(0, weight=1)
         tools.grid_rowconfigure(1, weight=1)
-        customtkinter.CTkLabel(tools, text="Extra Tools", text_color=TXT_MAIN, font=customtkinter.CTkFont(size=16, weight="bold")).grid(row=0, column=0, padx=8, pady=(8, 6), sticky="w")
-
+        customtkinter.CTkLabel(tools, text="Extra Tools 1 / Tools 2", text_color=TXT_MAIN, font=customtkinter.CTkFont(size=16, weight="bold")).grid(row=0, column=0, padx=8, pady=(8, 6), sticky="w")
         tools_tabs = customtkinter.CTkTabview(
+
             tools,
             fg_color=BG_CARD,
             segmented_button_fg_color=BG_CARD_ALT,
@@ -956,10 +957,10 @@ class App(customtkinter.CTk):
             border_width=0,
         )
         tools_tabs.grid(row=1, column=0, padx=8, pady=(0, 8), sticky="nsew")
-        tools_tabs.add("Tools 1")
-        tools_tabs.add("Tools 2")
-        tools_tabs.tab("Tools 1").grid_columnconfigure(0, weight=1)
-        tools_tabs.tab("Tools 2").grid_columnconfigure(0, weight=1)
+        tools_tabs.add("1")
+        tools_tabs.add("2")
+        tools_tabs.tab("1").grid_columnconfigure(0, weight=1)
+        tools_tabs.tab("2").grid_columnconfigure(0, weight=1)
         extra_buttons = [
             ("Move all CS windows", self._action_move_all_cs_windows, BG_CARD_ALT),
             ("Kill ALL CS & Steam", self._action_kill_all_cs_and_steam, ACCENT_PURPLE),
@@ -970,7 +971,7 @@ class App(customtkinter.CTk):
         ]
         for idx, (text, cmd, color) in enumerate(extra_buttons, start=1):
             customtkinter.CTkButton(
-                tools_tabs.tab("Tools 1"),
+                tools_tabs.tab("1"),
                 text=text,
                 command=cmd,
                 fg_color=color,
@@ -980,7 +981,7 @@ class App(customtkinter.CTk):
             ).grid(row=idx, column=0, padx=2, pady=4, sticky="ew")
 
         customtkinter.CTkButton(
-            tools_tabs.tab("Tools 2"),
+            tools_tabs.tab("2"),
             text="Launch steam",
             command=self._action_launch_steam_selected,
             fg_color=ACCENT_BLUE,
