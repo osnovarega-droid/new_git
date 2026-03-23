@@ -320,6 +320,51 @@ class AccountsControl(customtkinter.CTkTabview):
         time.sleep(2)
         self._logManager.add_log("🔄 Авто Get Level для запущенных аккаунтов...")
         self.try_get_level_for_accounts(accounts)
+
+    def launch_steam_selected(self):
+        with self._start_sequence_lock:
+            if self._start_sequence_active:
+                self._logManager.add_log("⚠️ Другой запуск уже выполняется, дождитесь завершения")
+                return
+            self._start_sequence_active = True
+
+        steam_path = self._settingsManager.get(
+            "SteamPath", r"C:\Program Files (x86)\Steam\steam.exe"
+        )
+        if not os.path.isfile(steam_path) or not steam_path.lower().endswith(".exe"):
+            self._logManager.add_log(f"❌ Некорректный SteamPath: {steam_path}")
+            self._finish_start_sequence()
+            return
+
+        accounts_to_start = self.accountsManager.selected_accounts.copy()
+        if not accounts_to_start:
+            self._logManager.add_log("⚠️ Нет выделенных аккаунтов для Steam-only запуска")
+            self._finish_start_sequence()
+            return
+
+        self._logManager.add_log(
+            f"🚀 Launch Steam only: {len(accounts_to_start)} аккаунтов"
+        )
+
+        try:
+            for acc in accounts_to_start:
+                try:
+                    acc.setColor("yellow")
+                    acc.StartSteamOnly()
+                    self._logManager.add_log(
+                        f"✅ [{acc.login}] Steam запущен без запуска CS2"
+                    )
+                except Exception as error:
+                    acc.setColor("#DCE4EE")
+                    self._logManager.add_log(
+                        f"❌ [{acc.login}] Steam-only запуск не удался: {error}"
+                    )
+                time.sleep(1.5)
+        finally:
+            self.accountsManager.selected_accounts.clear()
+            self.update_label()
+            self._finish_start_sequence()
+
     def _refresh_modern_levels_ui(self):
         """Обновляет уровни в новом UI (ui/app.py), если он доступен."""
         try:
