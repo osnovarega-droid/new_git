@@ -944,23 +944,37 @@ class App(customtkinter.CTk):
         tools.grid_propagate(False)
         tools.grid_columnconfigure(0, weight=1)
         tools.grid_rowconfigure(1, weight=1)
-        customtkinter.CTkLabel(tools, text="Extra Tools 1 / Tools 2", text_color=TXT_MAIN, font=customtkinter.CTkFont(size=16, weight="bold")).grid(row=0, column=0, padx=8, pady=(8, 6), sticky="w")
-        tools_tabs = customtkinter.CTkTabview(
-
-            tools,
-            fg_color=BG_CARD,
-            segmented_button_fg_color=BG_CARD_ALT,
-            segmented_button_selected_color=ACCENT_BLUE,
-            segmented_button_selected_hover_color=ACCENT_BLUE_DARK,
-            segmented_button_unselected_color=BG_CARD_ALT,
-            segmented_button_unselected_hover_color=BG_BORDER,
-            border_width=0,
+        tools_header = customtkinter.CTkFrame(tools, fg_color="transparent")
+        tools_header.grid(row=0, column=0, padx=8, pady=(8, 6), sticky="ew")
+        tools_header.grid_columnconfigure(0, weight=1)
+        self.tools_section_var = customtkinter.StringVar(value="Extra Tools 1")
+        self.tools_section_toggle = customtkinter.CTkSegmentedButton(
+            tools_header,
+            values=["Extra Tools 1", "Tools 2"],
+            variable=self.tools_section_var,
+            command=self._switch_tools_section,
+            fg_color=BG_CARD_ALT,
+            selected_color=ACCENT_BLUE,
+            selected_hover_color=ACCENT_BLUE_DARK,
+            unselected_color=BG_CARD_ALT,
+            unselected_hover_color=BG_BORDER,
+            text_color=TXT_MAIN,
+            font=customtkinter.CTkFont(size=12, weight="bold"),
+            height=30,
         )
-        tools_tabs.grid(row=1, column=0, padx=8, pady=(0, 8), sticky="nsew")
-        tools_tabs.add("1")
-        tools_tabs.add("2")
-        tools_tabs.tab("1").grid_columnconfigure(0, weight=1)
-        tools_tabs.tab("2").grid_columnconfigure(0, weight=1)
+        self.tools_section_toggle.grid(row=0, column=0, sticky="ew")
+
+        self.tools_content = customtkinter.CTkFrame(tools, fg_color="transparent")
+        self.tools_content.grid(row=1, column=0, padx=8, pady=(0, 8), sticky="nsew")
+        self.tools_content.grid_columnconfigure(0, weight=1)
+        self.tools_content.grid_rowconfigure(0, weight=1)
+
+        self.tools_sections = {}
+        for section_name in ("Extra Tools 1", "Tools 2"):
+            section_frame = customtkinter.CTkFrame(self.tools_content, fg_color="transparent")
+            section_frame.grid(row=0, column=0, sticky="nsew")
+            section_frame.grid_columnconfigure(0, weight=1)
+            self.tools_sections[section_name] = section_frame
         extra_buttons = [
             ("Move all CS windows", self._action_move_all_cs_windows, BG_CARD_ALT),
             ("Kill ALL CS & Steam", self._action_kill_all_cs_and_steam, ACCENT_PURPLE),
@@ -971,7 +985,7 @@ class App(customtkinter.CTk):
         ]
         for idx, (text, cmd, color) in enumerate(extra_buttons, start=1):
             customtkinter.CTkButton(
-                tools_tabs.tab("1"),
+                self.tools_sections["Extra Tools 1"],
                 text=text,
                 command=cmd,
                 fg_color=color,
@@ -981,7 +995,7 @@ class App(customtkinter.CTk):
             ).grid(row=idx, column=0, padx=2, pady=4, sticky="ew")
 
         customtkinter.CTkButton(
-            tools_tabs.tab("2"),
+            self.tools_sections["Tools 2"],
             text="Launch steam",
             command=self._action_launch_steam_selected,
             fg_color=ACCENT_BLUE,
@@ -989,7 +1003,8 @@ class App(customtkinter.CTk):
             height=34,
             font=customtkinter.CTkFont(size=11, weight="bold"),
         ).grid(row=1, column=0, padx=2, pady=4, sticky="ew")
-
+        self._switch_tools_section(self.tools_section_var.get())
+        
         lobby = customtkinter.CTkFrame(main, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
         lobby.grid(row=1, column=1, columnspan=2, padx=(6, 0), pady=(0, 0), sticky="ew")
         customtkinter.CTkLabel(lobby, text="Lobby Management", text_color=TXT_MAIN, font=customtkinter.CTkFont(size=13, weight="bold")).grid(row=0, column=0, columnspan=2, padx=8, pady=(8, 4), sticky="w")
@@ -1022,6 +1037,10 @@ class App(customtkinter.CTk):
 
         return frame
 
+    def _switch_tools_section(self, section_name):
+        for name, frame in getattr(self, "tools_sections", {}).items():
+            if name == section_name:
+                frame.tkraise()
     def _create_account_rows(self):
         self.account_row_items.clear()
         self.account_badges.clear()
