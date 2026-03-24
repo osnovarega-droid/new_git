@@ -10,6 +10,7 @@ const client = new SteamUser({
 const [, , login, password, sharedSecret, targetsArg] = process.argv;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAY_MS = 5000;
+const REQUEST_DELAY_MS = 15000;
 
 if (!login || !password || !sharedSecret || !targetsArg) {
     console.error('Usage: node add_game_library.js <login> <password> <shared_secret> <targets_csv>');
@@ -112,6 +113,10 @@ function doLogOn() {
     });
 }
 
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function requestWebSession() {
     return new Promise((resolve, reject) => {
         const onWebSession = (sessionId, cookies) => {
@@ -208,32 +213,35 @@ async function requestLicenses() {
 
     try {
         if (appIds.length > 0) {
-            const grantedApps = await new Promise((resolve, reject) => {
-                client.requestFreeLicense(appIds, (err, grantedPackageIDs, grantedAppIDs) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
+            for (const [index, appId] of appIds.entries()) {
+                const grantedApps = await new Promise((resolve, reject) => {
+                    client.requestFreeLicense([appId], (err, grantedPackageIDs, grantedAppIDs) => {
+                        if (err) {
+                            reject(err);
+                            return;
+                        }
 
-                    const grantedAppsList = Array.isArray(grantedAppIDs) ? grantedAppIDs : [];
-                    const grantedPackages = Array.isArray(grantedPackageIDs) ? grantedPackageIDs : [];
-                    if (grantedAppsList.length === 0 && grantedPackages.length === 0) {
-                        reject(new Error('requestFreeLicense returned no granted apps/packages'));
-                        return;
-                    }
+                        const grantedAppsList = Array.isArray(grantedAppIDs) ? grantedAppIDs : [];
+                        const grantedPackages = Array.isArray(grantedPackageIDs) ? grantedPackageIDs : [];
+                        if (grantedAppsList.length === 0 && grantedPackages.length === 0) {
+                            reject(new Error('requestFreeLicense returned no granted apps/packages'));
+                            return;
+                        }
 
-                    resolve(grantedAppsList);
+                        resolve(grantedAppsList);
+                    });
                 });
-            });
 
-            const grantedSet = new Set(grantedApps);
-            appIds.forEach((appId) => {
-                if (grantedSet.has(appId)) {
+                if (grantedApps.includes(appId)) {
                     console.log(`Успешно добавил игру в библиотеку ${appId}`);
                 } else {
                     console.log(`Не удалось добавить в библиотеку ${appId}`);
                 }
-            });
+
+                if (index < appIds.length - 1) {
+                    await delay(REQUEST_DELAY_MS);
+                }
+            }
         }
 
         if (subIds.length > 0) {
@@ -243,12 +251,16 @@ async function requestLicenses() {
                 webCookies = webSession.cookies;
             }
 
-            for (const subId of subIds) {
+            for (const [index, subId] of subIds.entries()) {
                 const result = await postAddFreeLicense(subId);
                 if (result.ok) {
                     console.log(`Успешно добавил лицензию subid ${subId}`);
                 } else {
                     console.log(`Не удалось добавить лицензию subid ${subId}`);
+                }
+
+                if (index < subIds.length - 1) {
+                    await delay(REQUEST_DELAY_MS);
                 }
             }
         }
@@ -264,7 +276,7 @@ async function requestLicenses() {
             reconnectAttempts += 1;
             webSessionId = null;
             webCookies = [];
-            console.error(`[${login}] license request failed: ${err?.message || err}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
+            console.error(`License request failed: ${err?.message || err}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
             setTimeout(() => {
                 if (isShuttingDown || licenseFlowCompleted) {
                     return;
@@ -308,7 +320,7 @@ client.on('error', (err) => {
         webSessionId = null;
         webCookies = [];
         licenseFlowStarted = false;
-        console.error(`[${login}] Steam error: ${err?.message || err}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
+        console.error(`Steam error: ${err?.message || err}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
         setTimeout(() => {
             if (isShuttingDown || licenseFlowCompleted) {
                 return;
@@ -318,7 +330,7 @@ client.on('error', (err) => {
         return;
     }
 
-    console.error(`[${login}] Steam error: ${err?.message || err}`);
+    console.error(`Steam error: ${err?.message || err}`);
     shutdown(5);
 });
 
@@ -330,7 +342,7 @@ client.on('disconnected', (eresult, msg) => {
         webSessionId = null;
         webCookies = [];
         licenseFlowStarted = false;
-        console.error(`[${login}] Disconnected: ${reason}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
+        console.error(`Disconnected: ${reason}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
         setTimeout(() => {
             if (isShuttingDown || licenseFlowCompleted) {
                 return;
@@ -340,7 +352,7 @@ client.on('disconnected', (eresult, msg) => {
         return;
     }
 
-    console.error(`[${login}] Disconnected: ${msg || eresult}`);
+    console.error(`Disconnected: ${msg || eresult}`);
     shutdown(6);
 });
 
