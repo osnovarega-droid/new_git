@@ -1148,7 +1148,7 @@ class App(customtkinter.CTk):
                 fg_color=BG_CARD_ALT,
                 hover_color=BG_BORDER,
                 font=customtkinter.CTkFont(size=10),
-                command=self._open_booster_settings,
+                command=lambda a=account: self._open_booster_settings(a),
             ).pack(side="left")
 
 
@@ -2142,53 +2142,164 @@ class App(customtkinter.CTk):
             return
         self.accounts_control.open_steam_profile(login)
 
-    def _open_booster_settings(self):
+    def _open_booster_settings(self, account=None):
         if not self._ensure_license():
             return
 
         popup = customtkinter.CTkToplevel(self)
         popup.title("Booster settings")
-        popup.geometry("330x170")
+        popup.geometry("420x260")
         popup.transient(self)
         popup.grab_set()
 
         popup.grid_columnconfigure(1, weight=1)
         customtkinter.CTkLabel(
             popup,
-            text="Параметры ротации игр",
+            text="Параметры ротации и игр",
             font=customtkinter.CTkFont(size=14, weight="bold"),
         ).grid(row=0, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="w")
 
-        customtkinter.CTkLabel(popup, text="Min (мин):").grid(row=1, column=0, padx=10, pady=6, sticky="w")
+        if account:
+            customtkinter.CTkLabel(
+                popup,
+                text=f"Логин: {account.login}",
+                text_color=TXT_MUTED,
+                font=customtkinter.CTkFont(size=11),
+            ).grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 8), sticky="w")
+
+        account_configs = self.settings_manager.get("ActivityBoosterAccounts", {}) or {}
+        if not isinstance(account_configs, dict):
+            account_configs = {}
+
+        global_min = self.settings_manager.get("ActivityBoosterMinMinutes", 60)
+        global_max = self.settings_manager.get("ActivityBoosterMaxMinutes", 100)
+        global_games = self.settings_manager.get("ActivityBoosterGameAppIds", []) or []
+
+        account_data = {}
+        if account:
+            account_data = account_configs.get(account.login, {})
+            if not isinstance(account_data, dict):
+                account_data = {}
+
+        min_initial = account_data.get("min_minutes", global_min)
+        max_initial = account_data.get("max_minutes", global_max)
+        games_initial = account_data.get("game_appids", global_games)
+        if isinstance(games_initial, list):
+            games_initial = ",".join(str(x) for x in games_initial if str(x).strip())
+        else:
+            games_initial = ""
+
+        customtkinter.CTkLabel(popup, text="Min (мин):").grid(row=2, column=0, padx=10, pady=6, sticky="w")
         min_entry = customtkinter.CTkEntry(popup, width=120)
-        min_entry.grid(row=1, column=1, padx=10, pady=6, sticky="ew")
-        min_entry.insert(0, str(self.settings_manager.get("ActivityBoosterMinMinutes", 60)))
+        min_entry.grid(row=2, column=1, padx=10, pady=6, sticky="ew")
+        min_entry.insert(0, str(min_initial))
 
-        customtkinter.CTkLabel(popup, text="Max (мин):").grid(row=2, column=0, padx=10, pady=6, sticky="w")
+        customtkinter.CTkLabel(popup, text="Max (мин):").grid(row=3, column=0, padx=10, pady=6, sticky="w")
         max_entry = customtkinter.CTkEntry(popup, width=120)
-        max_entry.grid(row=2, column=1, padx=10, pady=6, sticky="ew")
-        max_entry.insert(0, str(self.settings_manager.get("ActivityBoosterMaxMinutes", 100)))
+        max_entry.grid(row=3, column=1, padx=10, pady=6, sticky="ew")
+        max_entry.insert(0, str(max_initial))
 
-        def save_and_close():
+        customtkinter.CTkLabel(
+            popup,
+            text="AppID игр (до 5, через запятую):",
+        ).grid(row=4, column=0, padx=10, pady=6, sticky="w")
+        games_entry = customtkinter.CTkEntry(popup, width=220, placeholder_text="730,570,440")
+        games_entry.grid(row=4, column=1, padx=10, pady=6, sticky="ew")
+        games_entry.insert(0, games_initial)
+
+        def parse_form_values():
             try:
                 min_minutes = max(1, int(min_entry.get().strip()))
                 max_minutes = max(min_minutes, int(max_entry.get().strip()))
             except ValueError:
                 self.log_manager.add_log("❌ Booster settings: введите целые числа")
+                return None
+
+            raw_games = games_entry.get().strip()
+            if raw_games:
+                parsed = []
+                seen = set()
+                for token in raw_games.replace(";", ",").replace(" ", ",").split(","):
+                    token = token.strip()
+                    if not token:
+                        continue
+                    if not token.isdigit():
+                        self.log_manager.add_log("❌ Booster settings: AppID должны быть числами")
+                        return None
+                    app_id = int(token)
+                    if app_id <= 0:
+                        self.log_manager.add_log("❌ Booster settings: AppID должны быть > 0")
+                        return None
+                    if app_id in seen:
+                        continue
+                    parsed.append(app_id)
+                    seen.add(app_id)
+                if len(parsed) > 5:
+                    self.log_manager.add_log("❌ Booster settings: максимум 5 AppID")
+                    return None
+                game_appids = parsed
+            else:
+                game_appids = []
+
+            return min_minutes, max_minutes, game_appids
+
+        def apply_to_account():
+            if not account:
+                self.log_manager.add_log("⚠️ Откройте настройки через кнопку ⚙️ у конкретного аккаунта")
                 return
+
+            parsed_values = parse_form_values()
+            if not parsed_values:
+                return
+
+            min_minutes, max_minutes, game_appids = parsed_values
+            account_configs_local = self.settings_manager.get("ActivityBoosterAccounts", {}) or {}
+            if not isinstance(account_configs_local, dict):
+                account_configs_local = {}
+
+            account_configs_local[account.login] = {
+                "min_minutes": min_minutes,
+                "max_minutes": max_minutes,
+                "game_appids": game_appids,
+            }
+            self.settings_manager.set("ActivityBoosterAccounts", account_configs_local)
+            games_info = ",".join(str(x) for x in game_appids) if game_appids else "случайные игры"
+            self.log_manager.add_log(
+                f"✅ [{account.login}] Booster settings сохранены: {min_minutes}-{max_minutes} мин., игры: {games_info}"
+            )
+            popup.destroy()
+
+        def apply_to_all():
+            parsed_values = parse_form_values()
+            if not parsed_values:
+                return
+
+            min_minutes, max_minutes, game_appids = parsed_values
 
             self.settings_manager.set("ActivityBoosterMinMinutes", min_minutes)
             self.settings_manager.set("ActivityBoosterMaxMinutes", max_minutes)
-            self.log_manager.add_log(f"✅ Booster settings сохранены: {min_minutes}-{max_minutes} мин.")
+            self.settings_manager.set("ActivityBoosterGameAppIds", game_appids)
+            games_info = ",".join(str(x) for x in game_appids) if game_appids else "случайные игры"
+            self.log_manager.add_log(
+                f"✅ Booster settings для всех сохранены: {min_minutes}-{max_minutes} мин., игры: {games_info}"
+            )
             popup.destroy()
 
         customtkinter.CTkButton(
             popup,
-            text="Save",
-            command=save_and_close,
+            text="Применить к аккаунту",
+            command=apply_to_account,
             fg_color=ACCENT_BLUE,
             hover_color=ACCENT_BLUE_DARK,
-        ).grid(row=3, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="ew")
+        ).grid(row=5, column=0, padx=10, pady=(12, 10), sticky="ew")
+
+        customtkinter.CTkButton(
+            popup,
+            text="Применить ко всем",
+            command=apply_to_all,
+            fg_color=ACCENT_PURPLE,
+            hover_color="#6c41d4",
+        ).grid(row=5, column=1, padx=10, pady=(12, 10), sticky="ew")
         
     def _action_try_get_wingman_rank(self):
         if not self._ensure_license():
