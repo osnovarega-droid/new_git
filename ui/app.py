@@ -2160,24 +2160,54 @@ class App(customtkinter.CTk):
 
         popup = customtkinter.CTkToplevel(self)
         popup.title("Booster settings")
-        popup.geometry("420x260")
+        popup.geometry("380x300")
+        popup.resizable(False, False)
         popup.transient(self)
         popup.grab_set()
+        popup.grid_columnconfigure(0, weight=1)
+        popup.grid_rowconfigure(1, weight=1)
+        popup.configure(fg_color=BG_CARD_ALT)
 
-        popup.grid_columnconfigure(1, weight=1)
-        customtkinter.CTkLabel(
+        # Позиционируем окно строго внутри основного UI и не даём уехать за экран.
+        self.update_idletasks()
+        popup.update_idletasks()
+        width, height = 380, 300
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        parent_w = self.winfo_width()
+        parent_h = self.winfo_height()
+        pos_x = parent_x + max(12, (parent_w - width) // 2)
+        pos_y = parent_y + max(12, (parent_h - height) // 2)
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        pos_x = max(0, min(pos_x, screen_w - width))
+        pos_y = max(0, min(pos_y, screen_h - height))
+        popup.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+        content = customtkinter.CTkFrame(
             popup,
+            fg_color=BG_CARD,
+            corner_radius=10,
+            border_width=1,
+            border_color=BG_BORDER,
+        )
+        content.grid(row=0, column=0, padx=12, pady=12, sticky="nsew")
+        content.grid_columnconfigure(1, weight=1)
+        
+
+        customtkinter.CTkLabel(
+            content,
             text="Параметры ротации и игр",
             font=customtkinter.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="w")
+        ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
 
         if account:
             customtkinter.CTkLabel(
-                popup,
+                content,
                 text=f"Логин: {account.login}",
                 text_color=TXT_MUTED,
                 font=customtkinter.CTkFont(size=11),
-            ).grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 8), sticky="w")
+            ).grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
 
         account_configs = self.settings_manager.get("ActivityBoosterAccounts", {}) or {}
         if not isinstance(account_configs, dict):
@@ -2201,22 +2231,24 @@ class App(customtkinter.CTk):
         else:
             games_initial = ""
 
-        customtkinter.CTkLabel(popup, text="Min (мин):").grid(row=2, column=0, padx=10, pady=6, sticky="w")
-        min_entry = customtkinter.CTkEntry(popup, width=120)
-        min_entry.grid(row=2, column=1, padx=10, pady=6, sticky="ew")
+        customtkinter.CTkLabel(content, text="Min (мин):").grid(row=2, column=0, padx=12, pady=6, sticky="w")
+        min_entry = customtkinter.CTkEntry(content, width=120)
+        min_entry.grid(row=2, column=1, padx=12, pady=6, sticky="ew")
         min_entry.insert(0, str(min_initial))
 
-        customtkinter.CTkLabel(popup, text="Max (мин):").grid(row=3, column=0, padx=10, pady=6, sticky="w")
-        max_entry = customtkinter.CTkEntry(popup, width=120)
-        max_entry.grid(row=3, column=1, padx=10, pady=6, sticky="ew")
+        customtkinter.CTkLabel(content, text="Max (мин):").grid(row=3, column=0, padx=12, pady=6, sticky="w")
+        max_entry = customtkinter.CTkEntry(content, width=120)
+        max_entry.grid(row=3, column=1, padx=12, pady=6, sticky="ew")
         max_entry.insert(0, str(max_initial))
 
         customtkinter.CTkLabel(
-            popup,
+            content,
             text="AppID игр (до 5, через запятую, 0 = случайные):",
-        ).grid(row=4, column=0, padx=10, pady=6, sticky="w")
-        games_entry = customtkinter.CTkEntry(popup, width=220, placeholder_text="730,570,440")
-        games_entry.grid(row=4, column=1, padx=10, pady=6, sticky="ew")
+            justify="left",
+            wraplength=320,
+        ).grid(row=4, column=0, columnspan=2, padx=12, pady=(8, 2), sticky="w")
+        games_entry = customtkinter.CTkEntry(content, width=220, placeholder_text="730,570,440")
+        games_entry.grid(row=5, column=0, columnspan=2, padx=12, pady=(2, 8), sticky="ew")
         games_entry.insert(0, games_initial)
 
         def parse_form_values():
@@ -2299,21 +2331,25 @@ class App(customtkinter.CTk):
             )
             popup.destroy()
 
+        buttons_row = customtkinter.CTkFrame(content, fg_color="transparent")
+        buttons_row.grid(row=6, column=0, columnspan=2, padx=12, pady=(8, 12), sticky="ew")
+        buttons_row.grid_columnconfigure(0, weight=1)
+        buttons_row.grid_columnconfigure(1, weight=1)
         customtkinter.CTkButton(
-            popup,
+            buttons_row,
             text="Применить к аккаунту",
             command=apply_to_account,
             fg_color=ACCENT_BLUE,
             hover_color=ACCENT_BLUE_DARK,
-        ).grid(row=5, column=0, padx=10, pady=(12, 10), sticky="ew")
+        ).grid(row=0, column=0, padx=(0, 6), sticky="ew")
 
         customtkinter.CTkButton(
-            popup,
+            buttons_row,
             text="Применить ко всем",
             command=apply_to_all,
             fg_color=ACCENT_PURPLE,
             hover_color="#6c41d4",
-        ).grid(row=5, column=1, padx=10, pady=(12, 10), sticky="ew")
+        ).grid(row=0, column=1, padx=(6, 0), sticky="ew")
         
     def _action_try_get_wingman_rank(self):
         if not self._ensure_license():
