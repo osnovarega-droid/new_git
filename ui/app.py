@@ -1064,7 +1064,7 @@ class App(customtkinter.CTk):
                 corner_radius=8,
                 border_width=1,
                 border_color=BG_BORDER,
-                height=64,
+                height=78,
             )
             row.grid(row=idx, column=0, padx=4, pady=3, sticky="ew")
             row.grid_columnconfigure(0, weight=0)
@@ -1110,33 +1110,12 @@ class App(customtkinter.CTk):
                 font=customtkinter.CTkFont(size=11),
             )
             level_label.grid(row=1, column=0, pady=(2, 0), sticky="ew")
-            level_actions = customtkinter.CTkFrame(text_wrap, fg_color="transparent")
-            level_actions.grid(row=1, column=1, padx=(6, 0), pady=(2, 0), sticky="e")
-
-            customtkinter.CTkButton(
-                level_actions,
-                text="🔗",
-                width=40,
-                height=18,
-                fg_color=BG_CARD_ALT,
-                hover_color=BG_BORDER,
-                font=customtkinter.CTkFont(size=9, weight="bold"),
-                command=lambda login=account.login: self._open_steam_profile(login),
-            ).pack(side="left", padx=(0, 4))
-
-            customtkinter.CTkButton(
-                level_actions,
-                text="🛠️",
-                width=24,
-                height=18,
-                fg_color=BG_CARD_ALT,
-                hover_color=BG_BORDER,
-                font=customtkinter.CTkFont(size=10),
-                command=self._open_booster_settings,
-            ).pack(side="left")
+            status_wrap = customtkinter.CTkFrame(row, fg_color="transparent")
+            status_wrap.grid(row=0, column=2, rowspan=2, padx=(4, 8), pady=8, sticky="e")
+            status_wrap.grid_columnconfigure(0, weight=1)
 
             badge = customtkinter.CTkLabel(
-                row,
+                status_wrap,
                 text="Idle week",
                 text_color="#dbe8ff",
                 font=customtkinter.CTkFont(size=10),
@@ -1145,7 +1124,34 @@ class App(customtkinter.CTk):
                 width=84,
                 height=24,
             )
-            badge.grid(row=0, column=2, rowspan=2, padx=(4, 8), pady=10, sticky="e")
+            badge.grid(row=0, column=0, pady=(0, 4), sticky="e")
+
+            action_buttons = customtkinter.CTkFrame(status_wrap, fg_color="transparent")
+            action_buttons.grid(row=1, column=0, sticky="e")
+
+            customtkinter.CTkButton(
+                action_buttons,
+                text="Link",
+                width=64,
+                height=18,
+                fg_color=BG_CARD_ALT,
+                hover_color=BG_BORDER,
+                font=customtkinter.CTkFont(size=9, weight="bold"),
+                command=lambda login=account.login: self._open_steam_profile(login),
+            ).pack(side="left", padx=(0, 4))
+
+            customtkinter.CTkButton(
+                action_buttons,
+                text="⚙️",
+                width=24,
+                height=18,
+                fg_color=BG_CARD_ALT,
+                hover_color=BG_BORDER,
+                font=customtkinter.CTkFont(size=10),
+                command=self._open_booster_settings,
+            ).pack(side="left")
+
+
 
             account.setColorCallback(lambda color, a=account: self._handle_account_color_change(a, color))
             self.account_badges[account.login] = badge
