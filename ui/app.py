@@ -17,6 +17,7 @@ from pathlib import Path
 
 import customtkinter
 import requests
+from Helpers.LoginExecutor import SteamLoginSession
 from Managers.AccountsManager import AccountManager
 from Managers.LogManager import LogManager
 from Managers.SettingsManager import SettingsManager
@@ -622,6 +623,69 @@ class App(customtkinter.CTk):
         self._queue_ui_action(self._refresh_level_labels)
         self._queue_ui_action(self.update_label)
 
+    def _fetch_account_gcpd_html(self, steam_session, retries=2):
+        for _ in range(max(1, retries)):
+            try:
+                steam_session.login()
+                response = steam_session.session.get(
+                    "https://steamcommunity.com/my/gcpd/730",
+                    timeout=15,
+                )
+                if response.status_code == 200 and response.text:
+                    return response.text
+            except Exception:
+                pass
+            time.sleep(0.35)
+        return None
+
+    def _parse_level_xp_from_html(self, html):
+        if not html:
+            return None, None
+
+        rank_match = re.search(r'CS:GO Profile Rank:\s*([^\n<]+)', html, re.IGNORECASE)
+        xp_match = re.search(r'Experience points earned towards next rank:\s*([^\n<]+)', html, re.IGNORECASE)
+        if rank_match and xp_match:
+            rank = rank_match.group(1).strip().replace(",", "")
+            exp = xp_match.group(1).strip().replace(",", "").split()[0]
+            try:
+                return int(rank), int(exp)
+            except ValueError:
+                return None, None
+
+        rank_json_match = re.search(r'"profile_rank"[:\s]*(\d+)', html)
+        if rank_json_match:
+            try:
+                return int(rank_json_match.group(1)), 0
+            except ValueError:
+                return None, None
+
+        return None, None
+
+    def fetch_levels_for_accounts(self, accounts):
+        updated_count = 0
+        for acc in list(accounts or []):
+            try:
+                steam = SteamLoginSession(acc.login, acc.password, acc.shared_secret)
+                html = self._fetch_account_gcpd_html(steam, retries=2)
+                if not html:
+                    self.log_manager.add_log(f"[{acc.login}] ❌ No HTML")
+                    continue
+
+                level, xp = self._parse_level_xp_from_html(html)
+                if level is None:
+                    self.log_manager.add_log(f"[{acc.login}] ❌ Parse error")
+                    continue
+
+                self.log_manager.add_log(f"[{acc.login}] lvl: {level} | xp: {xp}")
+                acc.update_level_xp(level, xp)
+                self.update_account_level(acc.login, level, xp)
+                updated_count += 1
+            except Exception as exc:
+                self.log_manager.add_log(f"[{acc.login}] ❌ Error: {exc}")
+
+        self._queue_ui_action(self._safe_ui_refresh)
+        return updated_count
+        
     def select_first_non_farmed(self, n=4):
         available_accounts = [acc for acc in self.account_manager.accounts if not self.is_reserved_from_rotation(acc)]
         count = min(n, len(available_accounts))
@@ -2147,7 +2211,14 @@ class App(customtkinter.CTk):
     def _action_try_get_level(self):
         if not self._ensure_license():
             return
-        self._run_action_async(self.accounts_control.try_get_level, lambda _: self.after(300, self._refresh_level_labels))
+        selected_accounts = self.account_manager.selected_accounts.copy()
+        if not selected_accounts:
+            self.log_manager.add_log("⚠️ Нет выделенных аккаунтов")
+            return
+        self._run_action_async(
+            lambda: self.fetch_levels_for_accounts(selected_accounts),
+            lambda _: self.after(150, self._refresh_level_labels),
+        )
 
     def _action_kill_all_cs_and_steam(self):
         if not self._ensure_license():
