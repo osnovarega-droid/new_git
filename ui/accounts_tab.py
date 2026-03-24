@@ -2,9 +2,11 @@ import os
 import re
 import shutil
 import threading
+import subprocess
 import customtkinter
 import time
 import keyboard
+import webbrowser
 
 from Helpers.LoginExecutor import SteamLoginSession
 from Managers.AccountsManager import AccountManager
@@ -39,6 +41,7 @@ class AccountsControl(customtkinter.CTkTabview):
         self.create_stat_buttons()
         
         self.accounts_list.set_control_frame(self)
+        self.booster_processes = {}
 
     # ----------------- Вкладка Accounts Control -----------------
     def create_control_buttons(self):
@@ -365,6 +368,92 @@ class AccountsControl(customtkinter.CTkTabview):
             self.update_label()
             self._finish_start_sequence()
 
+    def open_steam_profile(self, login):
+        account = self.accountsManager.get_account(login)
+        if not account:
+            self._logManager.add_log(f"⚠️ [{login}] Аккаунт не найден")
+            return
+
+        steam_id = str(getattr(account, "steam_id", "") or "").strip()
+        if not steam_id or steam_id == "0":
+            self._logManager.add_log(f"⚠️ [{login}] В mafile отсутствует SteamID")
+            return
+
+        profile_url = f"https://steamcommunity.com/profiles/{steam_id}"
+        try:
+            webbrowser.open(profile_url)
+            self._logManager.add_log(f"🔗 [{login}] Открыт профиль Steam")
+        except Exception as exc:
+            self._logManager.add_log(f"❌ [{login}] Не удалось открыть профиль: {exc}")
+
+    def start_booster_selected(self):
+        selected_accounts = self.accountsManager.selected_accounts.copy()
+        if not selected_accounts:
+            self._logManager.add_log("⚠️ Нет выделенных аккаунтов для activity booster")
+            return
+
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        booster_script = os.path.join(project_root, "activity_booster.js")
+        if not os.path.isfile(booster_script):
+            self._logManager.add_log(f"❌ Файл activity_booster.js не найден: {booster_script}")
+            return
+
+        min_minutes = int(self._settingsManager.get("ActivityBoosterMinMinutes", 60) or 60)
+        max_minutes = int(self._settingsManager.get("ActivityBoosterMaxMinutes", 100) or 100)
+        if min_minutes <= 0:
+            min_minutes = 60
+        if max_minutes < min_minutes:
+            max_minutes = min_minutes
+
+        self._logManager.add_log(
+            f"🎮 Start booster: {len(selected_accounts)} аккаунтов (ротация {min_minutes}-{max_minutes} мин.)"
+        )
+
+        for acc in selected_accounts:
+            if not acc.shared_secret:
+                self._logManager.add_log(f"⚠️ [{acc.login}] Нет shared_secret (mafile), пропускаю")
+                continue
+
+            steam_id = str(getattr(acc, "steam_id", "") or "").strip()
+            if not steam_id or steam_id == "0":
+                self._logManager.add_log(f"⚠️ [{acc.login}] Нет steamid в mafile, пропускаю")
+                continue
+
+            existing = self.booster_processes.get(acc.login)
+            if existing and existing.poll() is None:
+                self._logManager.add_log(f"⚠️ [{acc.login}] booster уже запущен")
+                continue
+
+            cmd = [
+                "node",
+                booster_script,
+                acc.login,
+                acc.password,
+                acc.shared_secret,
+                steam_id,
+                str(min_minutes),
+                str(max_minutes),
+            ]
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=project_root,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env={**os.environ, "NODE_NO_WARNINGS": "1"},
+                )
+                self.booster_processes[acc.login] = proc
+                acc.setColor("#4f8cff")
+                self._logManager.add_log(f"✅ [{acc.login}] Activity booster запущен")
+            except FileNotFoundError:
+                self._logManager.add_log("❌ Не найден Node.js (команда node)")
+                return
+            except Exception as exc:
+                self._logManager.add_log(f"❌ [{acc.login}] Ошибка запуска booster: {exc}")
+
+        self.accountsManager.selected_accounts.clear()
+        self.update_label()
+
     def _refresh_modern_levels_ui(self):
         """Обновляет уровни в новом UI (ui/app.py), если он доступен."""
         try:
@@ -472,6 +561,16 @@ class AccountsControl(customtkinter.CTkTabview):
                     except:
                         pass
                     acc.CS2Process = None
+
+                booster_proc = self.booster_processes.get(acc.login)
+                if booster_proc and booster_proc.poll() is None:
+                    try:
+                        booster_proc.kill()
+                        killed += 1
+                        print(f"💀 Booster [{acc.login}]: {booster_proc.pid}")
+                    except Exception:
+                        pass
+                self.booster_processes.pop(acc.login, None)
                 
                 if self.accounts_list and self.accounts_list.is_farmed_account(acc):
                     acc.setColor("#ff9500")
