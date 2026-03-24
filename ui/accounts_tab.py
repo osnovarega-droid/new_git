@@ -547,95 +547,24 @@ class AccountsControl(customtkinter.CTkTabview):
             if hasattr(app, "fetch_levels_for_accounts"):
                 app.fetch_levels_for_accounts(accounts)
                 return
-        except Exception:
-            pass
-
-        def worker():
-            for acc in accounts:
-                try:
-                    steam = SteamLoginSession(acc.login, acc.password, acc.shared_secret)
-                    html = None
-                    for attempt in range(2):
-                        html = self._fetch_html(steam, url_suffix="gcpd/730")
-                        if html:
-                            break
-
-                        if attempt == 0:
-                            self._logManager.add_log(f"({acc.login} error, return)")
-                        else:
-                            self._logManager.add_log(f"({acc.login} error parsing lvl)")
-                    if not html:
-                        continue
-                    rank_match = re.search(r'CS:GO Profile Rank:\s*([^\n<]+)', html)
-                    xp_match = re.search(r'Experience points earned towards next rank:\s*([^\n<]+)', html)
-                    if rank_match and xp_match:
-                        rank = rank_match.group(1).strip().replace(',', '')
-                        exp = xp_match.group(1).strip().replace(',', '').split()[0]
-                        
-                        try:
-                            level = int(rank)
-                            xp = int(exp)
-                            self._logManager.add_log(f"[{acc.login}]  lvl: {level} | xp: {xp}")
-                            if self.accounts_list:
-                                self.accounts_list.update_account_level(acc.login, level, xp)
-                            self._refresh_modern_levels_ui()
-                        except ValueError:
-                            self._logManager.add_log(f"[{acc.login}] ❌ Parse error")
-                except Exception as e:
-                    self._logManager.add_log(f"[{acc.login}] ❌ Auto level error: {e}")
-        
-        threading.Thread(target=worker, daemon=True).start()
+            self._logManager.add_log("❌ App-level fetch_levels_for_accounts недоступен")
+        except Exception as e:
+            self._logManager.add_log(f"❌ Ошибка делегации get level: {e}")
 
     def try_get_level(self):
         try:
             app = self.winfo_toplevel()
             if hasattr(app, "fetch_levels_for_accounts"):
+                
                 selected_accounts = self.accountsManager.selected_accounts.copy()
                 if not selected_accounts:
                     self._logManager.add_log("⚠️ Нет выделенных аккаунтов")
                     return
                 app.fetch_levels_for_accounts(selected_accounts)
                 return
-        except Exception:
-            pass
-
-        def worker():
-            for acc in self.accountsManager.selected_accounts:
-                try:
-                    steam = SteamLoginSession(acc.login, acc.password, acc.shared_secret)
-                    html = self._fetch_html(steam, url_suffix="gcpd/730")
-                    if not html:
-                        self._logManager.add_log(f"[{acc.login}] ❌ No HTML")
-                        continue
-
-                    print(f"⏳ [{acc.login}] Wait for JS...")
-                    time.sleep(1)
-
-                    level, xp = 0, 0
-                    rank_match = re.search(r'CS:GO Profile Rank:\s*([\d,]+)', html, re.IGNORECASE)
-                    if rank_match:
-                        level = int(rank_match.group(1).replace(',', ''))
-                        xp_match = re.search(r'Experience points earned towards next rank:\s*([\d,]+)', html, re.IGNORECASE)
-                        xp = int(xp_match.group(1).replace(',', '')) if xp_match else 0
-                    else:
-                        if re.search(r'"profile_rank"[:\s]*(\d+)', html):
-                            rank_match = re.search(r'"profile_rank"[:\s]*(\d+)', html)
-                            level = int(rank_match.group(1)) if rank_match else 0
-
-                    if level > 0:
-                        self._logManager.add_log(f"[{acc.login}] lvl: {level} | xp: {xp}")
-                        acc.update_level_xp(level, xp)
-                        self.accounts_list.update_account_level(acc.login, level, xp)
-                        self._refresh_modern_levels_ui()
-                    else:
-                        with open(f"debug_{acc.login}.html", "w", encoding="utf-8") as f:
-                            f.write(html)
-                        self._logManager.add_log(f"[{acc.login}] ❌ No level (debug_{acc.login}.html)")
-
-                except Exception as e:
-                    self._logManager.add_log(f"[{acc.login}] ❌ Error: {e}")
-
-        self._run_stat_with_lock(worker)
+            self._logManager.add_log("❌ App-level fetch_levels_for_accounts недоступен")
+        except Exception as e:
+            self._logManager.add_log(f"❌ Ошибка делегации get level: {e}")
 
     def kill_selected(self):
         print("💀 УБИВАЮ ВЫБРАННЫЕ аккаунты!")
