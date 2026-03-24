@@ -1060,6 +1060,7 @@ class App(customtkinter.CTk):
             if name == section_name:
                 frame.tkraise()
     def _create_account_rows(self):
+        scroll_pos = self._get_accounts_scroll_position()
         self.account_row_items.clear()
         self.account_badges.clear()
 
@@ -1076,6 +1077,7 @@ class App(customtkinter.CTk):
                 height=78,
             )
             row.grid(row=idx, column=0, padx=4, pady=3, sticky="ew")
+            row.grid_propagate(False)
             row.grid_columnconfigure(0, weight=0)
             row.grid_columnconfigure(1, weight=1)
             row.grid_columnconfigure(2, weight=0)
@@ -1186,14 +1188,14 @@ class App(customtkinter.CTk):
             )
 
             self._refresh_account_badge(account)
-
+        self._restore_accounts_scroll_position(scroll_pos)
         
 
 
                 
     def _refresh_level_labels(self):
         try:
-            self.levels_cache = self._load_levels_from_json()
+
 
             levels_cache = self.levels_cache or {}
             levels_cache_lower = {str(k).lower(): v for k, v in levels_cache.items()}
@@ -1217,7 +1219,7 @@ class App(customtkinter.CTk):
                     changed = True
 
             if changed:
-                self.after_idle(self._refresh_accounts_scroll_layout)
+                self.after_idle(self._schedule_accounts_scroll_refresh)
 
         except Exception:
             pass
@@ -1228,6 +1230,7 @@ class App(customtkinter.CTk):
             mtime = level_path.stat().st_mtime if level_path.exists() else None
             if mtime != self._level_file_mtime:
                 self._level_file_mtime = mtime
+                self.levels_cache = self._load_levels_from_json()
                 self._refresh_level_labels()
         except Exception:
             pass
@@ -1244,6 +1247,7 @@ class App(customtkinter.CTk):
             elif self.is_drop_ready_account(account):
                 normalized = "#a855f7"
         def apply_change():
+
             for item in self.account_row_items:
                 if item["account"] is account:
                     item["login_label"].configure(text_color=normalized)
@@ -1347,7 +1351,7 @@ class App(customtkinter.CTk):
         filter_text = self.search_var.get().strip().lower() if hasattr(self, "search_var") else ""
         render_idx = 0
         changed = False
-
+        scroll_pos = self._get_accounts_scroll_position()
         for item in self.account_row_items:
             should_show = not filter_text or filter_text in item["login_lower"]
             was_visible = item["ui_state"]["visible"]
@@ -1370,10 +1374,34 @@ class App(customtkinter.CTk):
 
         if changed:
             self._schedule_accounts_scroll_refresh()
+            self._restore_accounts_scroll_position(scroll_pos)
+
+    def _get_accounts_scroll_position(self):
+        try:
+            canvas = getattr(self.accounts_scroll, "_parent_canvas", None)
+            if canvas:
+                start, _ = canvas.yview()
+                return start
+        except Exception:
+            pass
+        return None
+
+    def _restore_accounts_scroll_position(self, position):
+        if position is None:
+            return
+        try:
+            canvas = getattr(self.accounts_scroll, "_parent_canvas", None)
+            if canvas:
+                canvas.yview_moveto(position)
+        except Exception:
+            pass
+            
     def _refresh_accounts_scroll_layout(self):
         try:
             if hasattr(self, "accounts_scroll") and self.accounts_scroll.winfo_exists():
+                scroll_pos = self._get_accounts_scroll_position()
                 self.accounts_scroll.update_idletasks()
+                self._restore_accounts_scroll_position(scroll_pos)
         except Exception:
             pass  
 
