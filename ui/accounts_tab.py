@@ -43,6 +43,45 @@ class AccountsControl(customtkinter.CTkTabview):
         self.accounts_list.set_control_frame(self)
         self.booster_processes = {}
 
+    def _get_account_booster_config(self, login):
+        account_configs = self._settingsManager.get("ActivityBoosterAccounts", {}) or {}
+        if not isinstance(account_configs, dict):
+            account_configs = {}
+        cfg = account_configs.get(login, {})
+        return cfg if isinstance(cfg, dict) else {}
+
+    def _resolve_booster_settings(self, account):
+        account_cfg = self._get_account_booster_config(account.login)
+
+        min_minutes = int(account_cfg.get("min_minutes", self._settingsManager.get("ActivityBoosterMinMinutes", 60)) or 60)
+        max_minutes = int(account_cfg.get("max_minutes", self._settingsManager.get("ActivityBoosterMaxMinutes", 100)) or 100)
+        if min_minutes <= 0:
+            min_minutes = 60
+        if max_minutes < min_minutes:
+            max_minutes = min_minutes
+
+        game_appids = account_cfg.get("game_appids")
+        if game_appids is None:
+            game_appids = self._settingsManager.get("ActivityBoosterGameAppIds", []) or []
+        if not isinstance(game_appids, list):
+            game_appids = []
+
+        parsed_game_appids = []
+        seen = set()
+        for app_id in game_appids:
+            app_text = str(app_id).strip()
+            if not app_text.isdigit():
+                continue
+            app_id_int = int(app_text)
+            if app_id_int <= 0 or app_id_int in seen:
+                continue
+            parsed_game_appids.append(app_id_int)
+            seen.add(app_id_int)
+            if len(parsed_game_appids) >= 5:
+                break
+
+        return min_minutes, max_minutes, parsed_game_appids
+
     # ----------------- Вкладка Accounts Control -----------------
     def create_control_buttons(self):
         buttons = [
@@ -398,18 +437,11 @@ class AccountsControl(customtkinter.CTkTabview):
             self._logManager.add_log(f"❌ Файл activity_booster.js не найден: {booster_script}")
             return
 
-        min_minutes = int(self._settingsManager.get("ActivityBoosterMinMinutes", 60) or 60)
-        max_minutes = int(self._settingsManager.get("ActivityBoosterMaxMinutes", 100) or 100)
-        if min_minutes <= 0:
-            min_minutes = 60
-        if max_minutes < min_minutes:
-            max_minutes = min_minutes
-
-        self._logManager.add_log(
-            f"🎮 Start booster: {len(selected_accounts)} аккаунтов (ротация {min_minutes}-{max_minutes} мин.)"
-        )
+        self._logManager.add_log(f"🎮 Start booster: {len(selected_accounts)} аккаунтов")
 
         for acc in selected_accounts:
+            min_minutes, max_minutes, game_appids = self._resolve_booster_settings(acc)
+
             if not acc.shared_secret:
                 self._logManager.add_log(f"⚠️ [{acc.login}] Нет shared_secret (mafile), пропускаю")
                 continue
@@ -433,6 +465,7 @@ class AccountsControl(customtkinter.CTkTabview):
                 steam_id,
                 str(min_minutes),
                 str(max_minutes),
+                ",".join(str(x) for x in game_appids),
             ]
             try:
                 proc = subprocess.Popen(
@@ -444,7 +477,10 @@ class AccountsControl(customtkinter.CTkTabview):
                 )
                 self.booster_processes[acc.login] = proc
                 acc.setColor("#4f8cff")
-                self._logManager.add_log(f"✅ [{acc.login}] Activity booster запущен")
+                games_info = ",".join(str(x) for x in game_appids) if game_appids else "random"
+                self._logManager.add_log(
+                    f"✅ [{acc.login}] Activity booster запущен ({min_minutes}-{max_minutes} мин., games: {games_info})"
+                )
             except FileNotFoundError:
                 self._logManager.add_log("❌ Не найден Node.js (команда node)")
                 return
