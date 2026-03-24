@@ -1115,7 +1115,7 @@ class App(customtkinter.CTk):
 
             customtkinter.CTkButton(
                 level_actions,
-                text="link",
+                text="🔗",
                 width=40,
                 height=18,
                 fg_color=BG_CARD_ALT,
@@ -1126,7 +1126,7 @@ class App(customtkinter.CTk):
 
             customtkinter.CTkButton(
                 level_actions,
-                text="🙂",
+                text="🛠️",
                 width=24,
                 height=18,
                 fg_color=BG_CARD_ALT,
@@ -1282,14 +1282,14 @@ class App(customtkinter.CTk):
             self._save_levels_to_json()
 
         if account_data.get("trade_sent_week_start") == week_start_iso:
-            return "Sent trade", ACCENT_ORANGE
+            return "📤 Sent trade", ACCENT_ORANGE
 
         current_level = account_data.get("level")
         baseline_level = account_data.get("weekly_baseline_level")
         if isinstance(current_level, int) and isinstance(baseline_level, int) and current_level >= baseline_level + 1:
-            return "Take drop", ACCENT_GREEN
+            return "🎁 Take drop", ACCENT_GREEN
 
-        return "Idle week", ACCENT_BLUE
+        return "🛌 Idle week", ACCENT_BLUE
 
     def _refresh_all_runtime_states(self):
         changed = False
