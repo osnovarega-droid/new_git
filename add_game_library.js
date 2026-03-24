@@ -62,12 +62,13 @@ function shutdown(code = 0) {
 }
 
 client.on('loggedOn', () => {
-    console.log(`[${login}] Logged on. Requesting free licenses for app IDs: ${appIds.join(', ')}`);
     client.setPersona(SteamUser.EPersonaState.Online);
 
     client.requestFreeLicense(appIds, (err, grantedAppIDs, grantedPackageIDs) => {
         if (err) {
-            console.error(`[${login}] Failed to add game(s) to library: ${err.message || err}`);
+            appIds.forEach((appId) => {
+                console.log(`Не удалось добавить в библиотеку ${appId}`);
+            });
             shutdown(3);
             return;
         }
@@ -75,17 +76,21 @@ client.on('loggedOn', () => {
         const grantedApps = Array.isArray(grantedAppIDs) ? grantedAppIDs : [];
         const grantedPackages = Array.isArray(grantedPackageIDs) ? grantedPackageIDs : [];
 
-        if (grantedApps.length === 0 && grantedPackages.length === 0) {
-            console.log(`[${login}] No licenses were granted. These apps may already be in the library or are not free-to-play.`);
+        const grantedSet = new Set(grantedApps);
+        let successCount = 0;
+
+        appIds.forEach((appId) => {
+            if (grantedSet.has(appId)) {
+                console.log(`Успешно добавил игру в библиотеку ${appId}`);
+                successCount += 1;
+            } else {
+                console.log(`Не удалось добавить в библиотеку ${appId}`);
+            }
+        });
+
+        if (successCount === 0 && grantedPackages.length === 0) {
             shutdown(4);
             return;
-        }
-
-        if (grantedApps.length > 0) {
-            console.log(`[${login}] Added app IDs to library: ${grantedApps.join(', ')}`);
-        }
-        if (grantedPackages.length > 0) {
-            console.log(`[${login}] Granted package IDs: ${grantedPackages.join(', ')}`);
         }
 
         shutdown(0);
