@@ -2427,7 +2427,10 @@ class App(customtkinter.CTk):
             return True, f"appid {app_id} добавлен (subid {package_id})"
 
         if "already" in response_text or "owned" in response_text:
-            return False, f"Steam вернул owned/already, но appid {app_id} не найден в библиотеке"
+            # Для части аккаунтов Steam может вернуть "already owned", даже если
+            # dynamicstore/userdata еще не обновился или скрывает библиотеку.
+            # В этом случае считаем операцию успешной и не прерываем батч ошибкой.
+            return True, f"Steam вернул owned/already для appid {app_id} (считаем как уже добавлен)"
 
         if success_flag is True:
             return True, f"appid {app_id} добавлен (subid {package_id})"
