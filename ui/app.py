@@ -601,8 +601,21 @@ class App(customtkinter.CTk):
         current_data.update({"level": level, "xp": xp})
 
         week_start_iso = self._get_weekly_window_start().isoformat()
-        baseline_level = current_data.get("weekly_baseline_level")
+
         baseline_start = current_data.get("weekly_baseline_start")
+        baseline_level = current_data.get("weekly_baseline_level")
+
+        # Если baseline отсутствует (null/не число), фиксируем текущий уровень
+        # как baseline для текущей недельной витрины.
+        if baseline_start != week_start_iso:
+            current_data["weekly_baseline_start"] = week_start_iso
+            current_data["weekly_baseline_level"] = level if isinstance(level, int) else None
+            current_data.pop("trade_sent_week_start", None)
+            baseline_start = current_data.get("weekly_baseline_start")
+            baseline_level = current_data.get("weekly_baseline_level")
+        elif not isinstance(baseline_level, int) and isinstance(level, int):
+            current_data["weekly_baseline_level"] = level
+            baseline_level = level
         has_take_drop = (
             baseline_start == week_start_iso
             and isinstance(level, int)
@@ -2532,14 +2545,16 @@ class App(customtkinter.CTk):
                     stderr_lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
 
                     for line in stdout_lines:
-                        self.log_manager.add_log(f"ℹ️ [{target_account.login}] {line}")
+                        self.log_manager.add_log(line)
 
                     if result.returncode == 0:
-                        self.log_manager.add_log(f"✅ [{target_account.login}] Add game library выполнен успешно")
+                        continue
                     else:
                         if stderr_lines:
                             for line in stderr_lines:
                                 self.log_manager.add_log(f"❌ [{target_account.login}] {line}")
+                        elif stdout_lines:
+                            continue
                         else:
                             self.log_manager.add_log(
                                 f"❌ [{target_account.login}] Add game library завершился с кодом {result.returncode}"
