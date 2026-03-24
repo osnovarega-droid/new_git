@@ -1089,6 +1089,15 @@ class App(customtkinter.CTk):
             height=34,
             font=customtkinter.CTkFont(size=11, weight="bold"),
         ).grid(row=3, column=0, padx=2, pady=4, sticky="ew")
+        customtkinter.CTkButton(
+            self.tools_sections["Tools 2"],
+            text="Add game library",
+            command=self._action_open_add_game_library_popup,
+            fg_color=ACCENT_PURPLE,
+            hover_color=BG_BORDER,
+            height=34,
+            font=customtkinter.CTkFont(size=11, weight="bold"),
+        ).grid(row=4, column=0, padx=2, pady=4, sticky="ew")
         self._switch_tools_section(self.tools_section_var.get())
         
         lobby = customtkinter.CTkFrame(main, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
@@ -2252,6 +2261,230 @@ class App(customtkinter.CTk):
         if not self._ensure_license():
             return
         self._run_action_async(self.accounts_control.stop_booster_selected)
+
+    def _position_popup_inside_ui(self, popup, width, height):
+        self.update_idletasks()
+        popup.update_idletasks()
+        parent_x = self.winfo_rootx()
+        parent_y = self.winfo_rooty()
+        parent_w = self.winfo_width()
+        parent_h = self.winfo_height()
+        pos_x = parent_x + max(12, (parent_w - width) // 2)
+        pos_y = parent_y + max(12, (parent_h - height) // 2)
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        pos_x = max(0, min(pos_x, screen_w - width))
+        pos_y = max(0, min(pos_y, screen_h - height))
+        popup.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+    def _parse_appids_from_game_input(self, raw_value):
+        if not raw_value:
+            return [], ["Пустой ввод"]
+
+        tokens = [token.strip() for token in raw_value.split(",") if token.strip()]
+        app_ids = []
+        errors = []
+        seen = set()
+
+        for token in tokens:
+            app_id = None
+            if token.isdigit():
+                app_id = int(token)
+            else:
+                match = re.search(r"(?:store\.steampowered\.com|steamcommunity\.com)/app/(\d+)", token, re.IGNORECASE)
+                if match:
+                    app_id = int(match.group(1))
+
+            if not app_id or app_id <= 0:
+                errors.append(f"Не удалось распознать AppID из: {token}")
+                continue
+
+            if app_id in seen:
+                continue
+            seen.add(app_id)
+            app_ids.append(app_id)
+
+        return app_ids, errors
+
+    def _extract_free_package_id(self, app_payload):
+        if not isinstance(app_payload, dict):
+            return None
+
+        package_groups = app_payload.get("package_groups") or []
+        for group in package_groups:
+            for sub in group.get("subs", []):
+                try:
+                    package_id = int(sub.get("packageid") or 0)
+                except Exception:
+                    package_id = 0
+                if package_id <= 0:
+                    continue
+
+                is_free_license = bool(sub.get("is_free_license"))
+                cents = sub.get("price_in_cents_with_discount")
+                is_zero_price = isinstance(cents, int) and cents == 0
+                option_text = str(sub.get("option_text") or "").lower()
+                if is_free_license or is_zero_price or "$0" in option_text or "free" in option_text:
+                    return package_id
+
+        for package_id in app_payload.get("packages") or []:
+            try:
+                package_id_int = int(package_id)
+            except Exception:
+                continue
+            if package_id_int > 0:
+                return package_id_int
+
+        return None
+
+    def _check_app_is_free_and_get_package(self, steam_session, app_id):
+        url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc=us&l=en"
+        response = steam_session.session.get(url, timeout=15)
+        if response.status_code != 200:
+            return None, f"HTTP {response.status_code} при проверке appid {app_id}"
+
+        data = response.json()
+        app_node = data.get(str(app_id)) or {}
+        if not app_node.get("success"):
+            return None, f"appid {app_id} не найден в Store API"
+
+        app_payload = app_node.get("data") or {}
+        is_free_flag = bool(app_payload.get("is_free"))
+        package_id = self._extract_free_package_id(app_payload)
+
+        if not is_free_flag and not package_id:
+            return None, f"appid {app_id} не бесплатная или нет доступного free package"
+
+        return package_id, None
+
+    def _add_free_game_to_library(self, steam_session, app_id):
+        package_id, package_error = self._check_app_is_free_and_get_package(steam_session, app_id)
+        if package_error:
+            return False, package_error
+        if not package_id:
+            return False, f"Для appid {app_id} не найден package_id для добавления"
+
+        payload = {
+            "action": "add_to_cart",
+            "sessionid": steam_session.session_id,
+            "subid": package_id,
+        }
+        response = steam_session.session.post(
+            "https://store.steampowered.com/checkout/addfreelicense",
+            data=payload,
+            timeout=20,
+        )
+        if response.status_code != 200:
+            return False, f"HTTP {response.status_code} addfreelicense для appid {app_id}"
+
+        response_text = (response.text or "").lower()
+        if "success" in response_text and "false" not in response_text:
+            return True, f"appid {app_id} добавлен (subid {package_id})"
+
+        if "already" in response_text or "owned" in response_text:
+            return True, f"appid {app_id} уже есть в библиотеке"
+
+        return False, f"Не удалось подтвердить добавление appid {app_id}: {response.text[:180]}"
+
+    def _action_open_add_game_library_popup(self):
+        if not self._ensure_license():
+            return
+
+        popup = customtkinter.CTkToplevel(self)
+        popup.title("Add game library")
+        popup.geometry("520x250")
+        popup.resizable(False, False)
+        popup.transient(self)
+        popup.grab_set()
+        popup.configure(fg_color=BG_CARD_ALT)
+        self._position_popup_inside_ui(popup, 520, 250)
+
+        content = customtkinter.CTkFrame(
+            popup,
+            fg_color=BG_CARD,
+            corner_radius=10,
+            border_width=1,
+            border_color=BG_BORDER,
+        )
+        content.pack(fill="both", expand=True, padx=12, pady=12)
+
+        customtkinter.CTkLabel(
+            content,
+            text="Добавление бесплатных игр в библиотеку",
+            font=customtkinter.CTkFont(size=14, weight="bold"),
+        ).pack(anchor="w", padx=12, pady=(12, 6))
+
+        customtkinter.CTkLabel(
+            content,
+            text="Вставьте AppID или ссылку (через запятую):\n730, https://steamcommunity.com/app/730",
+            justify="left",
+            text_color=TXT_SOFT,
+        ).pack(anchor="w", padx=12, pady=(0, 6))
+
+        input_entry = customtkinter.CTkEntry(
+            content,
+            placeholder_text="730, https://steamcommunity.com/app/730",
+        )
+        input_entry.pack(fill="x", padx=12, pady=(0, 10))
+
+        def run_add():
+            selected_accounts = self.account_manager.selected_accounts.copy()
+            if len(selected_accounts) != 1:
+                self.log_manager.add_log("⚠️ Выделите ровно 1 аккаунт для Add game library")
+                return
+
+            raw_value = input_entry.get().strip()
+            app_ids, parse_errors = self._parse_appids_from_game_input(raw_value)
+            if parse_errors:
+                for message in parse_errors:
+                    self.log_manager.add_log(f"❌ {message}")
+            if not app_ids:
+                self.log_manager.add_log("❌ Нет валидных AppID для добавления")
+                return
+
+            target_account = selected_accounts[0]
+            popup.destroy()
+
+            def worker():
+                steam = SteamLoginSession(target_account.login, target_account.password, target_account.shared_secret)
+                try:
+                    steam.login()
+                    self.log_manager.add_log(f"✅ [{target_account.login}] Авторизация для Add game library успешна")
+                except Exception as exc:
+                    self.log_manager.add_log(f"❌ [{target_account.login}] Ошибка авторизации: {exc}")
+                    return
+
+                for app_id in app_ids:
+                    try:
+                        ok, message = self._add_free_game_to_library(steam, app_id)
+                    except Exception as exc:
+                        self.log_manager.add_log(f"❌ [{target_account.login}] appid {app_id}: {exc}")
+                        continue
+
+                    prefix = "✅" if ok else "❌"
+                    self.log_manager.add_log(f"{prefix} [{target_account.login}] {message}")
+
+            self._run_action_async(worker)
+
+        buttons = customtkinter.CTkFrame(content, fg_color="transparent")
+        buttons.pack(fill="x", padx=12, pady=(4, 12))
+        buttons.grid_columnconfigure((0, 1), weight=1)
+
+        customtkinter.CTkButton(
+            buttons,
+            text="Добавить на выбранный аккаунт",
+            command=run_add,
+            fg_color=ACCENT_BLUE,
+            hover_color=ACCENT_BLUE_DARK,
+        ).grid(row=0, column=0, padx=(0, 6), sticky="ew")
+
+        customtkinter.CTkButton(
+            buttons,
+            text="Отмена",
+            command=popup.destroy,
+            fg_color=BG_CARD_ALT,
+            hover_color=BG_BORDER,
+        ).grid(row=0, column=1, padx=(6, 0), sticky="ew")
     def _open_steam_profile(self, login):
         if not self._ensure_license():
             return
@@ -2271,21 +2504,10 @@ class App(customtkinter.CTk):
         popup.grid_rowconfigure(1, weight=1)
         popup.configure(fg_color=BG_CARD_ALT)
 
-        # Позиционируем окно строго внутри основного UI и не даём уехать за экран.
-        self.update_idletasks()
-        popup.update_idletasks()
+
         width, height = 380, 300
-        parent_x = self.winfo_rootx()
-        parent_y = self.winfo_rooty()
-        parent_w = self.winfo_width()
-        parent_h = self.winfo_height()
-        pos_x = parent_x + max(12, (parent_w - width) // 2)
-        pos_y = parent_y + max(12, (parent_h - height) // 2)
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        pos_x = max(0, min(pos_x, screen_w - width))
-        pos_y = max(0, min(pos_y, screen_h - height))
-        popup.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+        
+        self._position_popup_inside_ui(popup, width, height)
 
         content = customtkinter.CTkFrame(
             popup,
