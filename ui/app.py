@@ -2358,6 +2358,34 @@ class App(customtkinter.CTk):
         return package_id, None
 
     def _add_free_game_to_library(self, steam_session, app_id):
+        def _is_app_in_library():
+            try:
+                check_response = steam_session.session.get(
+                    "https://store.steampowered.com/dynamicstore/userdata/",
+                    timeout=15,
+                )
+            except Exception:
+                return None
+
+            if check_response.status_code != 200:
+                return None
+
+            try:
+                check_payload = check_response.json()
+            except Exception:
+                return None
+
+            owned_apps = check_payload.get("rgOwnedApps")
+            if isinstance(owned_apps, list):
+                try:
+                    return int(app_id) in {int(x) for x in owned_apps}
+                except Exception:
+                    return str(app_id) in {str(x) for x in owned_apps}
+            return None
+
+        app_already_owned_before = _is_app_in_library()
+        if app_already_owned_before is True:
+            return True, f"appid {app_id} уже есть в библиотеке"
         package_id, package_error = self._check_app_is_free_and_get_package(steam_session, app_id)
         if package_error:
             return False, package_error
@@ -2378,11 +2406,31 @@ class App(customtkinter.CTk):
             return False, f"HTTP {response.status_code} addfreelicense для appid {app_id}"
 
         response_text = (response.text or "").lower()
-        if "success" in response_text and "false" not in response_text:
+
+        try:
+            response_payload = response.json()
+        except Exception:
+            response_payload = {}
+
+        success_value = response_payload.get("success")
+        if isinstance(success_value, bool):
+            success_flag = success_value
+        elif isinstance(success_value, int):
+            success_flag = success_value == 1
+        else:
+            success_flag = None
+
+        app_owned_after = _is_app_in_library()
+        if app_owned_after is True:
+            if app_already_owned_before is True:
+                return True, f"appid {app_id} уже есть в библиотеке"
             return True, f"appid {app_id} добавлен (subid {package_id})"
 
         if "already" in response_text or "owned" in response_text:
-            return True, f"appid {app_id} уже есть в библиотеке"
+            return False, f"Steam вернул owned/already, но appid {app_id} не найден в библиотеке"
+
+        if success_flag is True:
+            return True, f"appid {app_id} добавлен (subid {package_id})"
 
         return False, f"Не удалось подтвердить добавление appid {app_id}: {response.text[:180]}"
 
@@ -2464,8 +2512,7 @@ class App(customtkinter.CTk):
 
                         prefix = "✅" if ok else "❌"
                         self.log_manager.add_log(f"{prefix} [{target_account.login}] {message}")
-                        if ok and "уже есть в библиотеке" in message:
-                            self.log_manager.add_log(f"{{{target_account.login}}}{{{app_id}}}{{existed library}}")
+
 
             self._run_action_async(worker)
 
