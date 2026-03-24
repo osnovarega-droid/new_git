@@ -5,21 +5,28 @@ const client = new SteamUser({
     enablePicsCache: true,
 });
 
-const [, , login, password, sharedSecret, steamIdArg, minIntervalArg, maxIntervalArg] = process.argv;
+const [, , login, password, sharedSecret, steamIdArg, minIntervalArg, maxIntervalArg, preferredAppIdsArg] = process.argv;
 
 if (!login || !password || !sharedSecret || !steamIdArg) {
-    console.error('Usage: node activity_booster.js <login> <password> <shared_secret> <steamid> [min_minutes=60] [max_minutes=100]');
+    console.error('Usage: node activity_booster.js <login> <password> <shared_secret> <steamid> [min_minutes=60] [max_minutes=100] [app_ids_csv]');
     process.exit(1);
 }
 
 
 const minIntervalMinutes = Math.max(1, Number.parseInt(minIntervalArg || '60', 10));
 const maxIntervalMinutes = Math.max(minIntervalMinutes, Number.parseInt(maxIntervalArg || '100', 10));
+const preferredAppIds = (preferredAppIdsArg || '')
+    .split(',')
+    .map((id) => Number.parseInt(String(id).trim(), 10))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .filter((id, idx, arr) => arr.indexOf(id) === idx)
+    .slice(0, 5);
 
 let availableGameIds = [];
 let rotateTimer = null;
 let isShuttingDown = false;
 let startedPlaying = false;
+let fixedPlayableIds = [];
 
 function randInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -50,7 +57,7 @@ function scheduleNextRotate() {
 
 function startRandomActivity() {
     startedPlaying = true;
-    const selected = pickRandomGames(availableGameIds, 2);
+    const selected = fixedPlayableIds.length > 0 ? fixedPlayableIds : pickRandomGames(availableGameIds, 2);
     if (selected.length === 0) {
         console.log('No games available for activity');
         return;
@@ -108,6 +115,17 @@ client.on('ownershipCached', async () => {
             shutdown(5); 
             return; 
         } 
+
+        if (preferredAppIds.length > 0) {
+            const availableSet = new Set(availableGameIds);
+            fixedPlayableIds = preferredAppIds.filter((id) => availableSet.has(id));
+            if (fixedPlayableIds.length === 0) {
+                console.error(`[${login}] None of requested appids are present in the library: ${preferredAppIds.join(', ')}`);
+                shutdown(7);
+                return;
+            }
+            console.log(`[${login}] Will play configured appids: ${fixedPlayableIds.join(', ')}`);
+        }
 
         console.log(`[${login}] Found ${availableGameIds.length} games`);
         startRandomActivity();
