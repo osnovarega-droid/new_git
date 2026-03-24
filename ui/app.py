@@ -2530,11 +2530,16 @@ class App(customtkinter.CTk):
                         app_ids_csv,
                     ]
                     try:
+                        node_env = os.environ.copy()
+                        node_env["NODE_NO_WARNINGS"] = "1"
                         result = subprocess.run(
                             command,
                             capture_output=True,
                             text=True,
-                            timeout=180,
+                            encoding="utf-8",
+                            errors="replace",
+                            timeout=300,
+                            env=node_env,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                         )
                     except Exception as exc:
