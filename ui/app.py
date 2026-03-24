@@ -2467,14 +2467,14 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkLabel(
             content,
-            text="Вставьте AppID или ссылку (через запятую):\n730, https://steamcommunity.com/app/730",
+            text="Вставьте AppID или ссылку (через запятую):\n730, https://store.steampowered.com/app/730/CounterStrike_2/",
             justify="left",
             text_color=TXT_SOFT,
         ).pack(anchor="w", padx=12, pady=(0, 6))
 
         input_entry = customtkinter.CTkEntry(
             content,
-            placeholder_text="730, https://steamcommunity.com/app/730",
+            placeholder_text="730, https://store.steampowered.com/app/730/CounterStrike_2/",
         )
         input_entry.pack(fill="x", padx=12, pady=(0, 10))
 
@@ -2497,24 +2497,53 @@ class App(customtkinter.CTk):
             popup.destroy()
 
             def worker():
+                add_script_path = Path(__file__).resolve().parent.parent / "add_game_library.js"
+                if not add_script_path.exists():
+                    self.log_manager.add_log(f"❌ Не найден скрипт: {add_script_path}")
+                    return
+
+                app_ids_csv = ",".join(str(x) for x in app_ids)
                 for target_account in selected_accounts:
-                    steam = SteamLoginSession(target_account.login, target_account.password, target_account.shared_secret)
-                    try:
-                        steam.login()
-                        self.log_manager.add_log(f"✅ [{target_account.login}] Авторизация для Add game library успешна")
-                    except Exception as exc:
-                        self.log_manager.add_log(f"❌ [{target_account.login}] Ошибка авторизации: {exc}")
+                    if not target_account.shared_secret:
+                        self.log_manager.add_log(f"❌ [{target_account.login}] Нет shared_secret для Add game library")
                         continue
 
-                    for app_id in app_ids:
-                        try:
-                            ok, message = self._add_free_game_to_library(steam, app_id)
-                        except Exception as exc:
-                            self.log_manager.add_log(f"❌ [{target_account.login}] appid {app_id}: {exc}")
-                            continue
+                    command = [
+                        "node",
+                        str(add_script_path),
+                        str(target_account.login),
+                        str(target_account.password),
+                        str(target_account.shared_secret),
+                        app_ids_csv,
+                    ]
+                    try:
+                        result = subprocess.run(
+                            command,
+                            capture_output=True,
+                            text=True,
+                            timeout=180,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        )
+                    except Exception as exc:
+                        self.log_manager.add_log(f"❌ [{target_account.login}] Ошибка запуска add_game_library.js: {exc}")
+                        continue
 
-                        prefix = "✅" if ok else "❌"
-                        self.log_manager.add_log(f"{prefix} [{target_account.login}] {message}")
+                    stdout_lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+                    stderr_lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
+
+                    for line in stdout_lines:
+                        self.log_manager.add_log(f"ℹ️ [{target_account.login}] {line}")
+
+                    if result.returncode == 0:
+                        self.log_manager.add_log(f"✅ [{target_account.login}] Add game library выполнен успешно")
+                    else:
+                        if stderr_lines:
+                            for line in stderr_lines:
+                                self.log_manager.add_log(f"❌ [{target_account.login}] {line}")
+                        else:
+                            self.log_manager.add_log(
+                                f"❌ [{target_account.login}] Add game library завершился с кодом {result.returncode}"
+                            )
 
 
             self._run_action_async(worker)
