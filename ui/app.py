@@ -1003,6 +1003,15 @@ class App(customtkinter.CTk):
             height=34,
             font=customtkinter.CTkFont(size=11, weight="bold"),
         ).grid(row=1, column=0, padx=2, pady=4, sticky="ew")
+        customtkinter.CTkButton(
+            self.tools_sections["Tools 2"],
+            text="Start booster",
+            command=self._action_start_booster_selected,
+            fg_color=ACCENT_GREEN,
+            hover_color=BG_BORDER,
+            height=34,
+            font=customtkinter.CTkFont(size=11, weight="bold"),
+        ).grid(row=2, column=0, padx=2, pady=4, sticky="ew")
         self._switch_tools_section(self.tools_section_var.get())
         
         lobby = customtkinter.CTkFrame(main, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
@@ -1082,6 +1091,7 @@ class App(customtkinter.CTk):
             text_wrap = customtkinter.CTkFrame(row, fg_color="transparent")
             text_wrap.grid(row=0, column=1, rowspan=2, padx=(2, 6), pady=6, sticky="nsew")
             text_wrap.grid_columnconfigure(0, weight=1)
+            text_wrap.grid_columnconfigure(1, weight=0)
 
             login_label = customtkinter.CTkLabel(
                 text_wrap,
@@ -1100,6 +1110,30 @@ class App(customtkinter.CTk):
                 font=customtkinter.CTkFont(size=11),
             )
             level_label.grid(row=1, column=0, pady=(2, 0), sticky="ew")
+            level_actions = customtkinter.CTkFrame(text_wrap, fg_color="transparent")
+            level_actions.grid(row=1, column=1, padx=(6, 0), pady=(2, 0), sticky="e")
+
+            customtkinter.CTkButton(
+                level_actions,
+                text="link",
+                width=40,
+                height=18,
+                fg_color=BG_CARD_ALT,
+                hover_color=BG_BORDER,
+                font=customtkinter.CTkFont(size=9, weight="bold"),
+                command=lambda login=account.login: self._open_steam_profile(login),
+            ).pack(side="left", padx=(0, 4))
+
+            customtkinter.CTkButton(
+                level_actions,
+                text="🙂",
+                width=24,
+                height=18,
+                fg_color=BG_CARD_ALT,
+                hover_color=BG_BORDER,
+                font=customtkinter.CTkFont(size=10),
+                command=self._open_booster_settings,
+            ).pack(side="left")
 
             badge = customtkinter.CTkLabel(
                 row,
@@ -2091,6 +2125,64 @@ class App(customtkinter.CTk):
         if not self._ensure_license():
             return
         self._run_action_async(self.accounts_control.launch_steam_selected)
+
+    def _action_start_booster_selected(self):
+        if not self._ensure_license():
+            return
+        self._run_action_async(self.accounts_control.start_booster_selected)
+
+    def _open_steam_profile(self, login):
+        if not self._ensure_license():
+            return
+        self.accounts_control.open_steam_profile(login)
+
+    def _open_booster_settings(self):
+        if not self._ensure_license():
+            return
+
+        popup = customtkinter.CTkToplevel(self)
+        popup.title("Booster settings")
+        popup.geometry("330x170")
+        popup.transient(self)
+        popup.grab_set()
+
+        popup.grid_columnconfigure(1, weight=1)
+        customtkinter.CTkLabel(
+            popup,
+            text="Параметры ротации игр",
+            font=customtkinter.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="w")
+
+        customtkinter.CTkLabel(popup, text="Min (мин):").grid(row=1, column=0, padx=10, pady=6, sticky="w")
+        min_entry = customtkinter.CTkEntry(popup, width=120)
+        min_entry.grid(row=1, column=1, padx=10, pady=6, sticky="ew")
+        min_entry.insert(0, str(self.settings_manager.get("ActivityBoosterMinMinutes", 60)))
+
+        customtkinter.CTkLabel(popup, text="Max (мин):").grid(row=2, column=0, padx=10, pady=6, sticky="w")
+        max_entry = customtkinter.CTkEntry(popup, width=120)
+        max_entry.grid(row=2, column=1, padx=10, pady=6, sticky="ew")
+        max_entry.insert(0, str(self.settings_manager.get("ActivityBoosterMaxMinutes", 100)))
+
+        def save_and_close():
+            try:
+                min_minutes = max(1, int(min_entry.get().strip()))
+                max_minutes = max(min_minutes, int(max_entry.get().strip()))
+            except ValueError:
+                self.log_manager.add_log("❌ Booster settings: введите целые числа")
+                return
+
+            self.settings_manager.set("ActivityBoosterMinMinutes", min_minutes)
+            self.settings_manager.set("ActivityBoosterMaxMinutes", max_minutes)
+            self.log_manager.add_log(f"✅ Booster settings сохранены: {min_minutes}-{max_minutes} мин.")
+            popup.destroy()
+
+        customtkinter.CTkButton(
+            popup,
+            text="Save",
+            command=save_and_close,
+            fg_color=ACCENT_BLUE,
+            hover_color=ACCENT_BLUE_DARK,
+        ).grid(row=3, column=0, columnspan=2, padx=10, pady=(12, 10), sticky="ew")
         
     def _action_try_get_wingman_rank(self):
         if not self._ensure_license():
