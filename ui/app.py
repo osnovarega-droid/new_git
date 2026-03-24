@@ -2290,34 +2290,43 @@ class App(customtkinter.CTk):
         pos_y = max(0, min(pos_y, screen_h - height))
         popup.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
 
-    def _parse_appids_from_game_input(self, raw_value):
+    def _parse_library_targets_from_input(self, raw_value):
         if not raw_value:
             return [], ["Пустой ввод"]
 
         tokens = [token.strip() for token in raw_value.split(",") if token.strip()]
-        app_ids = []
+        targets = []
         errors = []
         seen = set()
 
         for token in tokens:
-            app_id = None
+            target = None
             if token.isdigit():
-                app_id = int(token)
+                target = str(int(token))
             else:
-                match = re.search(r"(?:store\.steampowered\.com|steamcommunity\.com)/app/(\d+)", token, re.IGNORECASE)
-                if match:
-                    app_id = int(match.group(1))
+                token_lower = token.lower()
+                sub_match = re.search(r"(?:/sub/|subid\D*)(\d+)", token, re.IGNORECASE)
+                if sub_match:
+                    target = f"subid:{int(sub_match.group(1))}"
+                else:
+                    app_match = re.search(r"(?:store\.steampowered\.com|steamcommunity\.com)/app/(\d+)", token, re.IGNORECASE)
+                    if app_match:
+                        target = str(int(app_match.group(1)))
+                    else:
+                        prefixed_sub_match = re.search(r"^subid\s*[:=]?\s*(\d+)$", token_lower, re.IGNORECASE)
+                        if prefixed_sub_match:
+                            target = f"subid:{int(prefixed_sub_match.group(1))}"
 
-            if not app_id or app_id <= 0:
-                errors.append(f"Не удалось распознать AppID из: {token}")
+            if not target:
+                errors.append(f"Не удалось распознать AppID/SubID из: {token}")
                 continue
 
-            if app_id in seen:
+            if target in seen:
                 continue
-            seen.add(app_id)
-            app_ids.append(app_id)
+            seen.add(target)
+            targets.append(target)
 
-        return app_ids, errors
+        return targets, errors
 
     def _extract_free_package_id(self, app_payload):
         if not isinstance(app_payload, dict):
@@ -2480,14 +2489,14 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkLabel(
             content,
-            text="Вставьте AppID или ссылку (через запятую):\n730, https://store.steampowered.com/app/730/CounterStrike_2/",
+            text="Вставьте AppID/SubID или ссылку (через запятую):\n730, subid:1576481, https://store.steampowered.com/app/730/, https://store.steampowered.com/sub/1576481/",
             justify="left",
             text_color=TXT_SOFT,
         ).pack(anchor="w", padx=12, pady=(0, 6))
 
         input_entry = customtkinter.CTkEntry(
             content,
-            placeholder_text="730, https://store.steampowered.com/app/730/CounterStrike_2/",
+            placeholder_text="730, subid:1576481, https://store.steampowered.com/app/730/",
         )
         input_entry.pack(fill="x", padx=12, pady=(0, 10))
 
@@ -2498,12 +2507,12 @@ class App(customtkinter.CTk):
                 return
 
             raw_value = input_entry.get().strip()
-            app_ids, parse_errors = self._parse_appids_from_game_input(raw_value)
+            targets, parse_errors = self._parse_library_targets_from_input(raw_value)
             if parse_errors:
                 for message in parse_errors:
                     self.log_manager.add_log(f"❌ {message}")
-            if not app_ids:
-                self.log_manager.add_log("❌ Нет валидных AppID для добавления")
+            if not targets:
+                self.log_manager.add_log("❌ Нет валидных AppID/SubID для добавления")
                 return
 
 
@@ -2515,7 +2524,7 @@ class App(customtkinter.CTk):
                     self.log_manager.add_log(f"❌ Не найден скрипт: {add_script_path}")
                     return
 
-                app_ids_csv = ",".join(str(x) for x in app_ids)
+                targets_csv = ",".join(str(x) for x in targets)
                 for target_account in selected_accounts:
                     if not target_account.shared_secret:
                         self.log_manager.add_log(f"❌ [{target_account.login}] Нет shared_secret для Add game library")
@@ -2527,7 +2536,7 @@ class App(customtkinter.CTk):
                         str(target_account.login),
                         str(target_account.password),
                         str(target_account.shared_secret),
-                        app_ids_csv,
+                        targets_csv,
                     ]
                     try:
                         node_env = os.environ.copy()
