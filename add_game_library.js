@@ -49,6 +49,7 @@ if (appIds.length === 0) {
 let isShuttingDown = false;
 let reconnectAttempts = 0;
 let licenseRequestStarted = false;
+let licenseRequestCompleted = false;
 
 function shutdown(code = 0) {
     if (isShuttingDown) {
@@ -65,16 +66,38 @@ function shutdown(code = 0) {
     setTimeout(() => process.exit(code), 250);
 }
 
-client.on('loggedOn', () => {
-    reconnectAttempts = 0;
-    client.setPersona(SteamUser.EPersonaState.Online);
-    if (licenseRequestStarted) {
+function doLogOn() {
+    client.logOn({
+        accountName: login,
+        password,
+        twoFactorCode: SteamTotp.getAuthCode(sharedSecret),
+        machineName: `library_adder_${login}`,
+    });
+}
+
+function requestLicenses() {
+    if (isShuttingDown || licenseRequestStarted || licenseRequestCompleted) {
         return;
     }
-    licenseRequestStarted = true;
 
-    client.requestFreeLicense(appIds, (err, grantedAppIDs, grantedPackageIDs) => {
+    licenseRequestStarted = true;
+    client.requestFreeLicense(appIds, (err, grantedPackageIDs, grantedAppIDs) => {
+        licenseRequestStarted = false;
+
         if (err) {
+            const isNoConnection = String(err?.message || err).toLowerCase().includes('noconnection');
+            if (isNoConnection && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts += 1;
+                console.error(`[${login}] requestFreeLicense failed: ${err?.message || err}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
+                setTimeout(() => {
+                    if (isShuttingDown || licenseRequestCompleted) {
+                        return;
+                    }
+                    doLogOn();
+                }, RECONNECT_DELAY_MS);
+                return;
+            }
+
             appIds.forEach((appId) => {
                 console.log(`Не удалось добавить в библиотеку ${appId}`);
             });
@@ -102,8 +125,15 @@ client.on('loggedOn', () => {
             return;
         }
 
+        licenseRequestCompleted = true;
         shutdown(0);
     });
+}
+
+client.on('loggedOn', () => {
+    reconnectAttempts = 0;
+    client.setPersona(SteamUser.EPersonaState.Online);
+    requestLicenses();
 });
 
 client.on('error', (err) => {
@@ -114,19 +144,14 @@ client.on('error', (err) => {
 client.on('disconnected', (eresult, msg) => {
     const reason = msg || eresult;
     const isNoConnection = String(reason).toLowerCase().includes('noconnection');
-    if (!licenseRequestStarted && isNoConnection && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    if (!licenseRequestCompleted && isNoConnection && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts += 1;
         console.error(`[${login}] Disconnected: ${reason}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
         setTimeout(() => {
-            if (isShuttingDown || licenseRequestStarted) {
+            if (isShuttingDown || licenseRequestCompleted) {
                 return;
             }
-            client.logOn({
-                accountName: login,
-                password,
-                twoFactorCode: SteamTotp.getAuthCode(sharedSecret),
-                machineName: `library_adder_${login}`,
-            });
+            doLogOn();
         }, RECONNECT_DELAY_MS);
         return;
     }
@@ -138,9 +163,4 @@ client.on('disconnected', (eresult, msg) => {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-client.logOn({
-    accountName: login,
-    password,
-    twoFactorCode: SteamTotp.getAuthCode(sharedSecret),
-    machineName: `library_adder_${login}`,
-});
+doLogOn();
