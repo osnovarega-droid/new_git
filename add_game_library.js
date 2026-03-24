@@ -6,6 +6,8 @@ const client = new SteamUser({
 });
 
 const [, , login, password, sharedSecret, appIdsArg] = process.argv;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY_MS = 5000;
 
 if (!login || !password || !sharedSecret || !appIdsArg) {
     console.error('Usage: node add_game_library.js <login> <password> <shared_secret> <app_ids_or_urls_csv>');
@@ -45,6 +47,8 @@ if (appIds.length === 0) {
 }
 
 let isShuttingDown = false;
+let reconnectAttempts = 0;
+let licenseRequestStarted = false;
 
 function shutdown(code = 0) {
     if (isShuttingDown) {
@@ -62,7 +66,12 @@ function shutdown(code = 0) {
 }
 
 client.on('loggedOn', () => {
+    reconnectAttempts = 0;
     client.setPersona(SteamUser.EPersonaState.Online);
+    if (licenseRequestStarted) {
+        return;
+    }
+    licenseRequestStarted = true;
 
     client.requestFreeLicense(appIds, (err, grantedAppIDs, grantedPackageIDs) => {
         if (err) {
@@ -103,6 +112,25 @@ client.on('error', (err) => {
 });
 
 client.on('disconnected', (eresult, msg) => {
+    const reason = msg || eresult;
+    const isNoConnection = String(reason).toLowerCase().includes('noconnection');
+    if (!licenseRequestStarted && isNoConnection && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts += 1;
+        console.error(`[${login}] Disconnected: ${reason}. Retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${RECONNECT_DELAY_MS / 1000}s...`);
+        setTimeout(() => {
+            if (isShuttingDown || licenseRequestStarted) {
+                return;
+            }
+            client.logOn({
+                accountName: login,
+                password,
+                twoFactorCode: SteamTotp.getAuthCode(sharedSecret),
+                machineName: `library_adder_${login}`,
+            });
+        }, RECONNECT_DELAY_MS);
+        return;
+    }
+
     console.error(`[${login}] Disconnected: ${msg || eresult}`);
     shutdown(6);
 });
