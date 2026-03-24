@@ -542,6 +542,14 @@ class AccountsControl(customtkinter.CTkTabview):
         except Exception:
             pass
     def try_get_level_for_accounts(self, accounts):
+        try:
+            app = self.winfo_toplevel()
+            if hasattr(app, "fetch_levels_for_accounts"):
+                app.fetch_levels_for_accounts(accounts)
+                return
+        except Exception:
+            pass
+
         def worker():
             for acc in accounts:
                 try:
@@ -579,6 +587,18 @@ class AccountsControl(customtkinter.CTkTabview):
         threading.Thread(target=worker, daemon=True).start()
 
     def try_get_level(self):
+        try:
+            app = self.winfo_toplevel()
+            if hasattr(app, "fetch_levels_for_accounts"):
+                selected_accounts = self.accountsManager.selected_accounts.copy()
+                if not selected_accounts:
+                    self._logManager.add_log("⚠️ Нет выделенных аккаунтов")
+                    return
+                app.fetch_levels_for_accounts(selected_accounts)
+                return
+        except Exception:
+            pass
+
         def worker():
             for acc in self.accountsManager.selected_accounts:
                 try:
