@@ -595,7 +595,7 @@ class App(customtkinter.CTk):
         self.account_manager.selected_accounts.clear()
         self.update_label()
 
-    def update_account_level(self, login, level, xp):
+    def update_account_level(self, login, level, xp, queue_ui=True):
         existing = self.levels_cache.get(login, self.levels_cache.get(login.lower(), {}))
         current_data = existing if isinstance(existing, dict) else {}
         current_data.update({"level": level, "xp": xp})
@@ -620,8 +620,9 @@ class App(customtkinter.CTk):
         if has_take_drop and account and login not in self.farmed_accounts:
             account.setColor("#a855f7")
 
-        self._queue_ui_action(self._refresh_level_labels)
-        self._queue_ui_action(self.update_label)
+        if queue_ui:
+            self._queue_ui_action(self._refresh_level_labels)
+            self._queue_ui_action(self.update_label)
 
     def _fetch_account_gcpd_html(self, steam_session, retries=2):
         for _ in range(max(1, retries)):
@@ -678,11 +679,14 @@ class App(customtkinter.CTk):
 
                 self.log_manager.add_log(f"[{acc.login}] lvl: {level} | xp: {xp}")
                 acc.update_level_xp(level, xp)
-                self.update_account_level(acc.login, level, xp)
+                self.update_account_level(acc.login, level, xp, queue_ui=False)
                 updated_count += 1
             except Exception as exc:
                 self.log_manager.add_log(f"[{acc.login}] ❌ Error: {exc}")
 
+        if updated_count:
+            self._queue_ui_action(self._refresh_level_labels)
+            self._queue_ui_action(self.update_label)
         self._queue_ui_action(self._safe_ui_refresh)
         return updated_count
         
@@ -1402,7 +1406,7 @@ class App(customtkinter.CTk):
         def poll():
             try:
                 self._refresh_all_runtime_states()
-                self._refresh_level_labels_if_changed()
+
             except Exception:
                 pass
             finally:
