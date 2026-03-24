@@ -123,8 +123,51 @@ class AccountsControl(customtkinter.CTkTabview):
                     print(f"🟠 [{login}] Белый -> оранжевый")
 
             self.accounts_list._save_farmed_accounts()
-            self.accountsManager.selected_accounts.clear()
-            self.update_label()
+        self.accountsManager.selected_accounts.clear()
+        self.update_label()
+
+    def stop_booster_selected(self):
+        selected_accounts = self.accountsManager.selected_accounts.copy()
+        if not selected_accounts:
+            self._logManager.add_log("⚠️ Нет выделенных аккаунтов для остановки booster")
+            return
+
+        stopped = 0
+        for acc in selected_accounts:
+            booster_proc = self.booster_processes.get(acc.login)
+            if not booster_proc or booster_proc.poll() is not None:
+                self.booster_processes.pop(acc.login, None)
+                self._logManager.add_log(f"⚠️ [{acc.login}] booster не запущен")
+                continue
+
+            try:
+                booster_proc.kill()
+                stopped += 1
+                self._logManager.add_log(f"🛑 [{acc.login}] Activity booster остановлен")
+            except Exception as exc:
+                self._logManager.add_log(f"❌ [{acc.login}] Ошибка остановки booster: {exc}")
+            finally:
+                self.booster_processes.pop(acc.login, None)
+
+        if stopped > 0:
+            self._logManager.add_log(f"🛑 Stop booster: остановлено {stopped} аккаунтов")
+
+        self.accountsManager.selected_accounts.clear()
+        self.update_label()
+
+    def stop_all_boosters(self):
+        if not self.booster_processes:
+            return
+
+        for login, booster_proc in list(self.booster_processes.items()):
+            try:
+                if booster_proc and booster_proc.poll() is None:
+                    booster_proc.kill()
+                    self._logManager.add_log(f"🛑 [{login}] Booster остановлен при закрытии панели")
+            except Exception:
+                pass
+            finally:
+                self.booster_processes.pop(login, None)
         else:
             print("⚠️ Нет ссылки на accounts_list")
 
