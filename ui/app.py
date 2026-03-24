@@ -2429,8 +2429,8 @@ class App(customtkinter.CTk):
 
         def run_add():
             selected_accounts = self.account_manager.selected_accounts.copy()
-            if len(selected_accounts) != 1:
-                self.log_manager.add_log("⚠️ Выделите ровно 1 аккаунт для Add game library")
+            if not selected_accounts:
+                self.log_manager.add_log("⚠️ Выделите хотя бы 1 аккаунт для Add game library")
                 return
 
             raw_value = input_entry.get().strip()
@@ -2442,27 +2442,30 @@ class App(customtkinter.CTk):
                 self.log_manager.add_log("❌ Нет валидных AppID для добавления")
                 return
 
-            target_account = selected_accounts[0]
+
             popup.destroy()
 
             def worker():
-                steam = SteamLoginSession(target_account.login, target_account.password, target_account.shared_secret)
-                try:
-                    steam.login()
-                    self.log_manager.add_log(f"✅ [{target_account.login}] Авторизация для Add game library успешна")
-                except Exception as exc:
-                    self.log_manager.add_log(f"❌ [{target_account.login}] Ошибка авторизации: {exc}")
-                    return
-
-                for app_id in app_ids:
+                for target_account in selected_accounts:
+                    steam = SteamLoginSession(target_account.login, target_account.password, target_account.shared_secret)
                     try:
-                        ok, message = self._add_free_game_to_library(steam, app_id)
+                        steam.login()
+                        self.log_manager.add_log(f"✅ [{target_account.login}] Авторизация для Add game library успешна")
                     except Exception as exc:
-                        self.log_manager.add_log(f"❌ [{target_account.login}] appid {app_id}: {exc}")
+                        self.log_manager.add_log(f"❌ [{target_account.login}] Ошибка авторизации: {exc}")
                         continue
 
-                    prefix = "✅" if ok else "❌"
-                    self.log_manager.add_log(f"{prefix} [{target_account.login}] {message}")
+                    for app_id in app_ids:
+                        try:
+                            ok, message = self._add_free_game_to_library(steam, app_id)
+                        except Exception as exc:
+                            self.log_manager.add_log(f"❌ [{target_account.login}] appid {app_id}: {exc}")
+                            continue
+
+                        prefix = "✅" if ok else "❌"
+                        self.log_manager.add_log(f"{prefix} [{target_account.login}] {message}")
+                        if ok and "уже есть в библиотеке" in message:
+                            self.log_manager.add_log(f"{{{target_account.login}}}{{{app_id}}}{{existed library}}")
 
             self._run_action_async(worker)
 
@@ -2472,7 +2475,7 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkButton(
             buttons,
-            text="Добавить на выбранный аккаунт",
+            text="Добавить на выбранные аккаунты",
             command=run_add,
             fg_color=ACCENT_BLUE,
             hover_color=ACCENT_BLUE_DARK,
