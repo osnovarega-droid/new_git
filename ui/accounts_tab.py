@@ -43,6 +43,14 @@ class AccountsControl(customtkinter.CTkTabview):
         self.accounts_list.set_control_frame(self)
         self.booster_processes = {}
 
+    def _restore_account_color(self, account):
+        if self.accounts_list and self.accounts_list.is_farmed_account(account):
+            account.setColor("#ff9500")
+        elif self.accounts_list and self.accounts_list.is_drop_ready_account(account):
+            account.setColor("#a855f7")
+        else:
+            account.setColor("#DCE4EE")
+
     def _get_account_booster_config(self, login):
         account_configs = self._settingsManager.get("ActivityBoosterAccounts", {}) or {}
         if not isinstance(account_configs, dict):
@@ -137,12 +145,14 @@ class AccountsControl(customtkinter.CTkTabview):
             booster_proc = self.booster_processes.get(acc.login)
             if not booster_proc or booster_proc.poll() is not None:
                 self.booster_processes.pop(acc.login, None)
+                self._restore_account_color(acc)
                 self._logManager.add_log(f"⚠️ [{acc.login}] booster не запущен")
                 continue
 
             try:
                 booster_proc.kill()
                 stopped += 1
+                self._restore_account_color(acc)
                 self._logManager.add_log(f"🛑 [{acc.login}] Activity booster остановлен")
             except Exception as exc:
                 self._logManager.add_log(f"❌ [{acc.login}] Ошибка остановки booster: {exc}")
@@ -167,6 +177,9 @@ class AccountsControl(customtkinter.CTkTabview):
             except Exception:
                 pass
             finally:
+                acc = self.accountsManager.get_account(login)
+                if acc:
+                    self._restore_account_color(acc)
                 self.booster_processes.pop(login, None)
         else:
             print("⚠️ Нет ссылки на accounts_list")
@@ -600,14 +613,12 @@ class AccountsControl(customtkinter.CTkTabview):
                         pass
                 self.booster_processes.pop(acc.login, None)
                 
+                self._restore_account_color(acc)
                 if self.accounts_list and self.accounts_list.is_farmed_account(acc):
-                    acc.setColor("#ff9500")
                     print(f" [{acc.login}] Сброс - оранжевый цвет")
                 elif self.accounts_list and self.accounts_list.is_drop_ready_account(acc):
-                    acc.setColor("#a855f7")
                     print(f" [{acc.login}] Сброс - фиолетовый цвет")
                 else:
-                    acc.setColor("#DCE4EE")
                     print(f" [{acc.login}] Сброс - белый цвет")
                 
             except Exception as e:
