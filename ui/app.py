@@ -1012,6 +1012,15 @@ class App(customtkinter.CTk):
             height=34,
             font=customtkinter.CTkFont(size=11, weight="bold"),
         ).grid(row=2, column=0, padx=2, pady=4, sticky="ew")
+        customtkinter.CTkButton(
+            self.tools_sections["Tools 2"],
+            text="Stop booster",
+            command=self._action_stop_booster_selected,
+            fg_color=ACCENT_RED,
+            hover_color="#962c38",
+            height=34,
+            font=customtkinter.CTkFont(size=11, weight="bold"),
+        ).grid(row=3, column=0, padx=2, pady=4, sticky="ew")
         self._switch_tools_section(self.tools_section_var.get())
         
         lobby = customtkinter.CTkFrame(main, fg_color=BG_CARD, corner_radius=10, border_width=1, border_color=BG_BORDER)
@@ -2136,7 +2145,10 @@ class App(customtkinter.CTk):
         if not self._ensure_license():
             return
         self._run_action_async(self.accounts_control.start_booster_selected)
-
+    def _action_stop_booster_selected(self):
+        if not self._ensure_license():
+            return
+        self._run_action_async(self.accounts_control.stop_booster_selected)
     def _open_steam_profile(self, login):
         if not self._ensure_license():
             return
@@ -2201,7 +2213,7 @@ class App(customtkinter.CTk):
 
         customtkinter.CTkLabel(
             popup,
-            text="AppID игр (до 5, через запятую):",
+            text="AppID игр (до 5, через запятую, 0 = случайные):",
         ).grid(row=4, column=0, padx=10, pady=6, sticky="w")
         games_entry = customtkinter.CTkEntry(popup, width=220, placeholder_text="730,570,440")
         games_entry.grid(row=4, column=1, padx=10, pady=6, sticky="ew")
@@ -2217,27 +2229,29 @@ class App(customtkinter.CTk):
 
             raw_games = games_entry.get().strip()
             if raw_games:
-                parsed = []
-                seen = set()
-                for token in raw_games.replace(";", ",").replace(" ", ",").split(","):
-                    token = token.strip()
-                    if not token:
-                        continue
-                    if not token.isdigit():
-                        self.log_manager.add_log("❌ Booster settings: AppID должны быть числами")
-                        return None
-                    app_id = int(token)
-                    if app_id <= 0:
-                        self.log_manager.add_log("❌ Booster settings: AppID должны быть > 0")
-                        return None
-                    if app_id in seen:
-                        continue
-                    parsed.append(app_id)
-                    seen.add(app_id)
-                if len(parsed) > 5:
-                    self.log_manager.add_log("❌ Booster settings: максимум 5 AppID")
+                tokens = [t.strip() for t in raw_games.replace(";", ",").replace(" ", ",").split(",") if t.strip()]
+                if any(not token.isdigit() for token in tokens):
+                    self.log_manager.add_log("❌ Booster settings: AppID должны быть числами")
                     return None
-                game_appids = parsed
+
+                token_values = [int(token) for token in tokens]
+                if 0 in token_values:
+                    game_appids = []
+                else:
+                    parsed = []
+                    seen = set()
+                    for app_id in token_values:
+                        if app_id <= 0:
+                            self.log_manager.add_log("❌ Booster settings: AppID должны быть > 0 или 0 для случайных игр")
+                            return None
+                        if app_id in seen:
+                            continue
+                        parsed.append(app_id)
+                        seen.add(app_id)
+                    if len(parsed) > 5:
+                        self.log_manager.add_log("❌ Booster settings: максимум 5 AppID")
+                        return None
+                    game_appids = parsed
             else:
                 game_appids = []
 
@@ -3332,6 +3346,11 @@ class App(customtkinter.CTk):
                 pass
         try:
             self._save_window_position()
+        except Exception:
+            pass
+        try:
+            if self.accounts_control:
+                self.accounts_control.stop_all_boosters()
         except Exception:
             pass
         try:
